@@ -190,14 +190,14 @@ class QaNet(Model):
             modeled_passage = self._dropout(self._modeling_layer(modeled_passage_list[-1], passage_mask))
             modeled_passage_list.append(modeled_passage)
 
-        # Shape: (batch_size, passage_length, encoding_dim * 4 + modeling_dim))
+        # Shape: (batch_size, passage_length, modeling_dim * 2))
         span_start_input = torch.cat([modeled_passage_list[-3], modeled_passage_list[-2]], dim=-1)
         # Shape: (batch_size, passage_length)
         span_start_logits = self._span_start_predictor(span_start_input).squeeze(-1)
         # Shape: (batch_size, passage_length)
         span_start_probs = masked_softmax(span_start_logits, passage_mask)
 
-        # Shape: (batch_size, passage_length, encoding_dim * 4 + span_end_encoding_dim)
+        # Shape: (batch_size, passage_length, modeling_dim * 2)
         span_end_input = torch.cat([modeled_passage_list[-3], modeled_passage_list[-1]], dim=-1)
         span_end_logits = self._span_end_predictor(span_end_input).squeeze(-1)
         span_end_probs = masked_softmax(span_end_logits, passage_mask)

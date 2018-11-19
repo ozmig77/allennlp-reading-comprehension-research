@@ -77,6 +77,8 @@ class SquadReader(DatasetReader):
             dataset_json = json.load(dataset_file)
             dataset = dataset_json['data']
         logger.info("Reading the dataset")
+        max_passage_len = self.passage_length_limit if is_train else self.passage_length_limit_for_eval
+        max_question_len = self.question_length_limit if is_train else self.question_length_limit_for_eval
         for article in dataset:
             for paragraph_json in article['paragraphs']:
                 paragraph = paragraph_json["context"]
@@ -87,24 +89,14 @@ class SquadReader(DatasetReader):
                     answer_texts = [answer['text'] for answer in question_answer['answers']]
                     span_starts = [answer['answer_start'] for answer in question_answer['answers']]
                     span_ends = [start + len(answer) for start, answer in zip(span_starts, answer_texts)]
-                    if is_train:
-                        instance = self.text_to_instance(question_text,
-                                                         paragraph,
-                                                         zip(span_starts, span_ends),
-                                                         answer_texts,
-                                                         tokenized_paragraph,
-                                                         max_passage_len=self.passage_length_limit,
-                                                         max_question_len=self.question_length_limit,
-                                                         drop_invalid=True)
-                    else:
-                        instance = self.text_to_instance(question_text,
-                                                         paragraph,
-                                                         zip(span_starts, span_ends),
-                                                         answer_texts,
-                                                         tokenized_paragraph,
-                                                         max_passage_len=self.passage_length_limit_for_eval,
-                                                         max_question_len=self.question_length_limit_for_eval,
-                                                         drop_invalid=False)
+                    instance = self.text_to_instance(question_text,
+                                                     paragraph,
+                                                     zip(span_starts, span_ends),
+                                                     answer_texts,
+                                                     tokenized_paragraph,
+                                                     max_passage_len=max_passage_len,
+                                                     max_question_len=max_question_len,
+                                                     drop_invalid=is_train)
                     if instance is not None:
                         yield instance
 
