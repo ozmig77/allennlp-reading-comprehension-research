@@ -195,7 +195,7 @@ class DROPReader(DatasetReader):
             metadata["answer_texts"] = answer_info["answer_texts"]
 
             span_fields = [SpanField(span[0], span[1], fields["passage"]) for span in answer_info["answer_spans"]]
-            if span_fields:
+            if not span_fields:
                 span_fields.append(SpanField(-1, -1, fields["passage"]))
             fields["answer_as_spans"] = ListField(span_fields)
 
@@ -203,13 +203,13 @@ class DROPReader(DatasetReader):
             for plus_minus_combination in answer_info["plus_minus_combinations"]:
                 plus_minus_combinations_fields.append(
                         SequenceLabelField(plus_minus_combination, fields["numbers_in_passage"]))
-            if plus_minus_combinations_fields:
+            if not plus_minus_combinations_fields:
                 plus_minus_combinations_fields.append(
                         SequenceLabelField([0] * len(fields["numbers_in_passage"]), fields["numbers_in_passage"]))
             fields["answer_as_plus_minus_combinations"] = ListField(plus_minus_combinations_fields)
 
             count_fields = [LabelField(count_label, skip_indexing=True) for count_label in answer_info["counts"]]
-            if count_fields:
+            if not count_fields:
                 count_fields.append(LabelField(-1, skip_indexing=True))
             fields["answer_as_counts"] = ListField(count_fields)
 
