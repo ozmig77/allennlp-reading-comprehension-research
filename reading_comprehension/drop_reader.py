@@ -40,9 +40,6 @@ class DROPReader(DatasetReader):
         self.question_length_limit = question_length_limit
         self.passage_length_limit_for_eval = passage_length_limit_for_evaluation or passage_length_limit
         self.question_length_limit_for_eval = question_length_limit_for_evaluation or question_length_limit
-        self.span_found = 0
-        self.plus_minus_found = 0
-        self.count_fount = 0
 
     @overrides
     def _read(self, file_path: str):
@@ -77,9 +74,6 @@ class DROPReader(DatasetReader):
                 else:
                     skip_count += 1
         logger.info(f"Skipped {skip_count} questions, kept {len(instances)} questions.")
-        logger.info(f"Span found: {self.span_found}, "
-                    f"plus-minus found: {self.plus_minus_found}, "
-                    f"count found: {self.count_fount}.")
         return instances
 
     @overrides
