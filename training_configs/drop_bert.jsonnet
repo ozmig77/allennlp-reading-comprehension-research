@@ -6,35 +6,51 @@
                 "type": "single_id",
                 "lowercase_tokens": true
             },
+            "bert": {
+                "type": "bert-pretrained",
+                "pretrained_model": "bert-base-uncased",
+                "use_starting_offsets": true
+            },
             "token_characters": {
-                "type": "characters"
+                "type": "characters",
+                "min_padding_length": 5
             }
         },
-        "passage_length_limit": 400,
+        "passage_length_limit": 350,
         "question_length_limit": 50,
-        "passage_length_limit_for_evaluation": 1000,
-        "question_length_limit_for_evaluation": 100
+        "passage_length_limit_for_evaluation": 350,
+        "question_length_limit_for_evaluation": 50
     },
     "vocabulary": {
         "min_count": {
             "token_characters": 200
         },
         "pretrained_files": {
-            "tokens": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/glove/glove.840B.300d.lower.zip"
+            "tokens": "https://s3-us-west-2.amazonaws.com/allennlp/datasets/glove/glove.6B.100d.txt.gz"
         },
         "only_include_pretrained_words": true
     },
     "train_data_path": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/sparc/drop_dataset_train.json",
     "validation_data_path": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/sparc/drop_dataset_dev.json",
     "model": {
-        "type": "qanet",
+        "type": "qanet_for_drop",
         "text_field_embedder": {
+            "allow_unmatched_keys": true,
+            "embedder_to_indexer_map": {
+                "bert": ["bert", "bert-offsets"],
+                "tokens": ["tokens"],
+                "token_characters": ["token_characters"],
+            },
             "token_embedders": {
                 "tokens": {
                     "type": "embedding",
-                    "pretrained_file": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/glove/glove.840B.300d.lower.zip",
-                    "embedding_dim": 300,
+                    "pretrained_file": "https://s3-us-west-2.amazonaws.com/allennlp/datasets/glove/glove.6B.100d.txt.gz",
+                    "embedding_dim": 100,
                     "trainable": false
+                },
+                "bert": {
+                    "type": "bert-pretrained",
+                    "pretrained_model": "bert-base-uncased"
                 },
                 "token_characters": {
                     "type": "character_encoding",

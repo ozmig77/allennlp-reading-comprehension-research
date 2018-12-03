@@ -11,11 +11,13 @@ from allennlp.data.dataset_readers.reading_comprehension.util import make_readin
 from allennlp.data.token_indexers import SingleIdTokenIndexer, TokenIndexer
 from allennlp.data.tokenizers import Token, Tokenizer, WordTokenizer
 from allennlp.data.dataset_readers.reading_comprehension.util import IGNORED_TOKENS, STRIPPED_CHARACTERS
-from allennlp.data.fields import Field, TextField, MetadataField, \
-    LabelField, ListField, SequenceLabelField, SpanField
+from allennlp.data.fields import Field, TextField, MetadataField, LabelField, ListField, \
+    SequenceLabelField, SpanField, IndexField
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
+
+# TODO: Add more number here
 WORD_NUMBER_MAP = {"one": 1, "two": 2, "three": 3, "four": 4,
                    "five": 5, "six": 6, "seven": 7, "eight": 8,
                    "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
@@ -101,6 +103,12 @@ class DROPReader(DatasetReader):
         if answer_annotation is not None:
             answer_type, answer_texts = self.convert_answer(answer_annotation)
 
+        # To find the gold labels for training, we treat each span of span answers
+        # or each token in date answers as the correct answer.
+        # But we need to join them for evaluating.
+        # The prediction should cover each of them in order to get completely correct.
+        answer_texts_for_eval = [' '.join(answer_texts)]
+
         only_use_answer_span = False
         if only_use_answer_span:
             valid_spans = self.find_valid_spans(passage_tokens, answer_texts) if answer_texts else []
@@ -113,20 +121,22 @@ class DROPReader(DatasetReader):
                                                        self._token_indexers,
                                                        passage_text,
                                                        valid_spans,
-                                                       answer_texts,
+                                                       answer_texts_for_eval,
                                                        additional_metadata={
                                                                "passage_id": passage_id,
                                                                "original_passage": passage_text,
                                                                "original_question": question_text})
         else:
             numbers_in_passage = []
-            for token in passage_tokens:
+            number_indices = []
+            for token_index, token in enumerate(passage_tokens):
                 number = self.convert_string_to_int(token.text)
                 if number is not None:
                     numbers_in_passage.append(number)
-            # hack to guarantee minimal length of padded number TODO: do this more elegantly
-            numbers_in_passage.append(12345)
-            numbers_in_passage = list(set(numbers_in_passage))
+                    number_indices.append(token_index)
+            # hack to guarantee minimal length of padded number
+            numbers_in_passage.append(0)
+            number_indices.append(-1)
             numbers_as_tokens = [Token(str(number)) for number in numbers_in_passage]
             valid_spans = self.find_valid_spans(passage_tokens, answer_texts) if answer_texts else []
             target_numbers = []
@@ -146,7 +156,7 @@ class DROPReader(DatasetReader):
             if not valid_spans and not valid_plus_minus_combinations and not valid_counts and drop_invalid:
                 return None
 
-            answer_info = {"answer_texts": answer_texts,
+            answer_info = {"answer_texts": answer_texts_for_eval,
                            "answer_spans": valid_spans,
                            "plus_minus_combinations": valid_plus_minus_combinations,
                            "counts": valid_counts}
@@ -154,6 +164,7 @@ class DROPReader(DatasetReader):
             return self.make_one_drop_instance(question_tokens,
                                                passage_tokens,
                                                numbers_as_tokens,
+                                               number_indices,
                                                self._token_indexers,
                                                passage_text,
                                                answer_info,
@@ -168,6 +179,7 @@ class DROPReader(DatasetReader):
     def make_one_drop_instance(question_tokens: List[Token],
                                passage_tokens: List[Token],
                                number_tokens: List[Token],
+                               number_indices: List[int],
                                token_indexers: Dict[str, TokenIndexer],
                                passage_text: str,
                                answer_info: Dict[str, Any] = None,
@@ -179,12 +191,19 @@ class DROPReader(DatasetReader):
         # This is separate so we can reference it later with a known type.
         fields["passage"] = TextField(passage_tokens, token_indexers)
         fields["question"] = TextField(question_tokens, token_indexers)
+        number_index_fields = [IndexField(index, fields["passage"]) for index in number_indices]
+        fields["number_indices"] = ListField(number_index_fields)
+        # This field is actually not required in the model,
+        # it is used to create the `answer_as_plus_minus_combinations` field, which is a `SequenceLabelField`.
+        # We cannot use `number_indices` field for creating that, because the `ListField` will not be empty
+        # when we want to create a new empty field. That will lead to error.
         fields["numbers_in_passage"] = TextField(number_tokens, token_indexers)
         metadata = {"original_passage": passage_text,
                     "token_offsets": passage_offsets,
                     "question_tokens": [token.text for token in question_tokens],
                     "passage_tokens": [token.text for token in passage_tokens],
-                    "number_tokens": number_tokens}
+                    "number_tokens": [token.text for token in number_tokens],
+                    "number_indices": number_indices}
         if answer_info:
             metadata["answer_texts"] = answer_info["answer_texts"]
 

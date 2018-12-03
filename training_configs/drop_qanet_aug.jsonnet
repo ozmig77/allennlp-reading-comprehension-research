@@ -7,7 +7,8 @@
                 "lowercase_tokens": true
             },
             "token_characters": {
-                "type": "characters"
+                "type": "characters",
+                "min_padding_length": 5
             }
         },
         "passage_length_limit": 400,
@@ -24,8 +25,8 @@
         },
         "only_include_pretrained_words": true
     },
-    "train_data_path": "/home/yizhongw/reading/DROP-dataset/dataset_split_latest/drop_dataset_train.json",
-    "validation_data_path": "/home/yizhongw/reading/DROP-dataset/dataset_split_latest/drop_dataset_dev.json",
+    "train_data_path": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/sparc/drop_dataset_train.json",
+    "validation_data_path": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/sparc/drop_dataset_dev.json",
     "model": {
         "type": "qanet_for_drop",
         "text_field_embedder": {

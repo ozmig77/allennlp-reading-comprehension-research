@@ -63,8 +63,8 @@ class QaNetForDrop(Model):
                                                   hidden_dims=[modeling_out_dim, 3],
                                                   num_layers=2,
                                                   dropout=dropout_prob)
-        self._number_embedding_proj_layer = torch.nn.Linear(text_embed_dim, modeling_out_dim)
-        self._number_sign_predictor = FeedForward(modeling_out_dim * 2,
+        self._number_embedding_proj_layer = torch.nn.Linear(modeling_out_dim * 2, modeling_out_dim)
+        self._number_sign_predictor = FeedForward(modeling_out_dim * 3,
                                                   activations=[Activation.by_name('relu')(),
                                                                Activation.by_name('linear')()],
                                                   hidden_dims=[modeling_out_dim, 3],
@@ -89,6 +89,7 @@ class QaNetForDrop(Model):
                 question: Dict[str, torch.LongTensor],
                 passage: Dict[str, torch.LongTensor],
                 numbers_in_passage: Dict[str, torch.LongTensor],
+                number_indices: torch.LongTensor,
                 answer_as_spans: torch.LongTensor = None,
                 answer_as_plus_minus_combinations: torch.LongTensor = None,
                 answer_as_counts: torch.LongTensor = None,
@@ -138,9 +139,9 @@ class QaNetForDrop(Model):
             modeled_passage = self._dropout(self._modeling_layer(modeled_passage_list[-1], passage_mask))
             modeled_passage_list.append(modeled_passage)
 
-        passage_weights = self._passage_weights_predictor(modeled_passage_list[4]).squeeze(-1)
+        passage_weights = self._passage_weights_predictor(modeled_passage_list[1]).squeeze(-1)
         passage_weights = masked_softmax(passage_weights, passage_mask)
-        passage_vector = util.weighted_sum(modeled_passage_list[4], passage_weights)
+        passage_vector = util.weighted_sum(modeled_passage_list[1], passage_weights)
         question_weights = self._question_weights_predictor(encoded_question).squeeze(-1)
         question_weights = masked_softmax(question_weights, question_mask)
         question_vector = util.weighted_sum(encoded_question, question_weights)
@@ -148,6 +149,10 @@ class QaNetForDrop(Model):
         # Shape: (batch_size, 3)
         answer_type_logits = self._answer_type_predictor(torch.cat([passage_vector, question_vector], -1))
         answer_type_log_probs = torch.nn.functional.log_softmax(answer_type_logits, -1)
+
+        # Shape: (batch_size, 10)
+        count_number_logits = self._count_number_predictor(passage_vector)
+        count_number_log_probs = torch.nn.functional.log_softmax(count_number_logits, -1)
 
         # Shape: (batch_size, passage_length, encoding_dim * 2 + modeling_dim))
         passage_for_span_start = torch.cat([modeled_passage_list[1], modeled_passage_list[2]], dim=-1)
@@ -162,19 +167,27 @@ class QaNetForDrop(Model):
         span_end_log_probs = util.masked_log_softmax(span_end_logits, passage_mask)
 
         # Shape: (batch_size, # of numbers in the passage)
-        numbers_mask = util.get_text_field_mask(numbers_in_passage).float()
-        # Shape: (batch_size, # of numbers in the passage, embedding_dim)
-        embedded_numbers = self._dropout(self._text_field_embedder(numbers_in_passage))
-        embedded_numbers = self._number_embedding_proj_layer(embedded_numbers)
+        number_indices = number_indices.squeeze(-1)
+        number_mask = (number_indices != -1).float()
+        clamped_number_indices = torch.nn.functional.relu(number_indices)
+        encoded_passage_for_numbers = torch.cat([modeled_passage_list[1], modeled_passage_list[4]], dim=-1)
+        # Shape: (batch_size, # of numbers in the passage, encoding_dim)
         encoded_numbers = \
-            torch.cat([embedded_numbers, passage_vector.unsqueeze(1).repeat(1, embedded_numbers.size(1), 1)], -1)
+            torch.gather(encoded_passage_for_numbers,
+                         1,
+                         clamped_number_indices.unsqueeze(-1).expand(-1, -1, encoded_passage_for_numbers.size(-1)))
+        encoded_numbers = encoded_numbers * number_mask.unsqueeze(-1)
+        # Shape: (batch_size, # of numbers in the passage)
+        # number_mask = util.get_text_field_mask(numbers_in_passage).float()
+        # Shape: (batch_size, # of numbers in the passage, embedding_dim)
+        # embedded_numbers = self._dropout(self._text_field_embedder(numbers_in_passage))
+        # embedded_numbers = self._number_embedding_proj_layer(encoded_numbers)
+        encoded_numbers = \
+            torch.cat([encoded_numbers, passage_vector.unsqueeze(1).repeat(1, encoded_numbers.size(1), 1)], -1)
+
         # Shape: (batch_size, # of numbers in the passage, 3)
         number_sign_logits = self._number_sign_predictor(encoded_numbers)
         number_sign_log_probs = torch.nn.functional.log_softmax(number_sign_logits, -1)
-
-        # Shape: (batch_size, 10)
-        count_number_logits = self._count_number_predictor(passage_vector)
-        count_number_log_probs = torch.nn.functional.log_softmax(count_number_logits, -1)
 
         span_start_logits = util.replace_masked_values(span_start_logits, passage_mask, -1e7)
         span_end_logits = util.replace_masked_values(span_end_logits, passage_mask, -1e7)
@@ -191,14 +204,14 @@ class QaNetForDrop(Model):
 
         # Shape: (batch_size, # of numbers in passage).
         # For padding numbers, the best sign masked as 0 (not included).
-        best_signs_for_numbers = torch.argmax(number_sign_log_probs, -1) * numbers_mask.long()
+        best_signs_for_numbers = torch.argmax(number_sign_log_probs, -1) * number_mask.long()
         # Shape: (batch_size, # of numbers in passage)
         best_signs_log_probs = \
             torch.gather(number_sign_log_probs, 2, best_signs_for_numbers.unsqueeze(-1)).squeeze(-1)
         # the probs of the masked positions should be 1 so that it will not affect the joint probability
         # TODO: this is not quite right, since if there are many numbers in the passage,
         # TODO: the joint probability would be very small.
-        best_signs_log_probs = util.replace_masked_values(best_signs_log_probs, numbers_mask, 0)
+        best_signs_log_probs = util.replace_masked_values(best_signs_log_probs, number_mask, 0)
         # Shape: (batch_size,)
         best_combination_log_prob = best_signs_log_probs.sum(-1)
         best_combination_log_prob += answer_type_log_probs[:, 1]
@@ -254,7 +267,7 @@ class QaNetForDrop(Model):
             # the log likelihood of the masked positions should be 0
             # so that it will not affect the joint probability
             log_likelihood_for_number_signs = \
-                util.replace_masked_values(log_likelihood_for_number_signs, numbers_mask.unsqueeze(-1), 0)
+                util.replace_masked_values(log_likelihood_for_number_signs, number_mask.unsqueeze(-1), 0)
             # Shape: (batch_size, # of combinations)
             log_likelihood_for_combinations = log_likelihood_for_number_signs.sum(1)
             # For those padded combinations, we set their log probabilities to be very small negative value
@@ -290,11 +303,9 @@ class QaNetForDrop(Model):
             output_dict['best_answer_str'] = []
             question_tokens = []
             passage_tokens = []
-            number_tokens = []
             for i in range(batch_size):
                 question_tokens.append(metadata[i]['question_tokens'])
                 passage_tokens.append(metadata[i]['passage_tokens'])
-                number_tokens.append(metadata[i]['number_tokens'])
                 answer_type = best_answer_type[i].detach().cpu().numpy()
 
                 # We did not consider multi-mention answers here
@@ -319,16 +330,18 @@ class QaNetForDrop(Model):
 
                 answer_texts = metadata[i].get('answer_texts', [])
                 if answer_texts:
+                    # For debugging
                     # if best_answer_str in answer_texts:
-                    # print("=" * 10)
-                    # print(metadata[i]["original_passage"])
-                    # print(metadata[i]["original_question"])
-                    # print(answer_texts)
-                    # print(f"type: {answer_type}")
-                    # print(best_answer_str)
-                    # print(answer_type_log_probs[i])
-                    # print(best_signs_for_numbers[i])
-                    # print(best_combination_log_prob[i])
+                    #     print("=" * 10)
+                    #     print(metadata[i]["original_passage"])
+                    #     print(metadata[i]["original_question"])
+                    #     print(metadata[i]["original_numbers"])
+                    #     print(f"answer: {answer_texts}")
+                    #     print(f"type: {answer_type}")
+                    #     print(f"prediction: {best_answer_str}")
+                    #     print(best_signs_for_numbers[i].detach().cpu().numpy())
+                    #     print(answer_type_log_probs[i].exp().detach().cpu().numpy())
+                    #     print()
                     self._squad_metrics(best_answer_str, answer_texts)
             output_dict['question_tokens'] = question_tokens
             output_dict['passage_tokens'] = passage_tokens
