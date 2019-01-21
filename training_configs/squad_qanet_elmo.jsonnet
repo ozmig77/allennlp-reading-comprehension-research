@@ -9,21 +9,34 @@
             "token_characters": {
                 "type": "characters",
                 "min_padding_length": 5
-            }
+            },
+            "elmo": {
+                "type": "elmo_characters"
+            },
         },
         "passage_length_limit": 400,
         "question_length_limit": 50,
         "passage_length_limit_for_evaluation": 1000,
         "question_length_limit_for_evaluation": 100
     },
-    "train_data_path": "fixtures/qanet/squad.json",
-    "validation_data_path": "fixtures/qanet/squad.json",
+    "vocabulary": {
+        "min_count": {
+            "token_characters": 200
+        },
+        "pretrained_files": {
+            "tokens": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/glove/glove.840B.300d.lower.zip"
+        },
+        "only_include_pretrained_words": true
+    },
+    "train_data_path": "https://s3-us-west-2.amazonaws.com/allennlp/datasets/squad/squad-train-v1.1.json",
+    "validation_data_path": "https://s3-us-west-2.amazonaws.com/allennlp/datasets/squad/squad-dev-v1.1.json",
     "model": {
         "type": "qanet",
         "text_field_embedder": {
             "token_embedders": {
                 "tokens": {
                     "type": "embedding",
+                    "pretrained_file": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/glove/glove.840B.300d.lower.zip",
                     "embedding_dim": 300,
                     "trainable": false
                 },
@@ -40,7 +53,14 @@
                             5
                         ]
                     }
-                }
+                },
+                "elmo":{
+                    "type": "elmo_token_embedder",
+                    "options_file": "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway_5.5B/elmo_2x4096_512_2048cnn_2xhighway_5.5B_options.json",
+                    "weight_file": "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway_5.5B/elmo_2x4096_512_2048cnn_2xhighway_5.5B_weights.hdf5",
+                    "do_layer_norm": false,
+                    "dropout": 0.5
+                },
             }
         },
         "num_highway_layers": 2,
@@ -70,7 +90,7 @@
             "hidden_dim": 128,
             "attention_projection_dim": 128,
             "feedforward_hidden_dim": 128,
-            "num_blocks": 2,
+            "num_blocks": 6,
             "num_convs_per_block": 2,
             "conv_kernel_size": 5,
             "num_attention_heads": 8,
@@ -101,17 +121,16 @@
                 "num_tokens"
             ]
         ],
-        "padding_noise": 0.0,
-        "batch_size": 32,
+        "batch_size": 16,
         "max_instances_in_memory": 600
     },
     "trainer": {
         "type": "ema_trainer",
-        "num_epochs": 1,
+        "num_epochs": 50,
         "grad_norm": 5,
         "patience": 10,
         "validation_metric": "+f1",
-        "cuda_device": -1,
+        "cuda_device": 0,
         "optimizer": {
             "type": "adam",
             "lr": 0.001,

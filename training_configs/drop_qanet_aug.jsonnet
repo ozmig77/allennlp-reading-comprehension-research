@@ -21,20 +21,20 @@
             "token_characters": 200
         },
         "pretrained_files": {
-            "tokens": "https://s3-us-west-2.amazonaws.com/allennlp/datasets/glove/glove.6B.100d.txt.gz"
+            "tokens": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/glove/glove.840B.300d.lower.zip"
         },
         "only_include_pretrained_words": true
     },
-    "train_data_path": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/sparc/drop_dataset_train.json",
-    "validation_data_path": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/sparc/drop_dataset_dev.json",
+    "train_data_path": "",
+    "validation_data_path": "",
     "model": {
-        "type": "qanet_for_drop",
+        "type": "qanet_marginal",
         "text_field_embedder": {
             "token_embedders": {
                 "tokens": {
                     "type": "embedding",
-                    "pretrained_file": "https://s3-us-west-2.amazonaws.com/allennlp/datasets/glove/glove.6B.100d.txt.gz",
-                    "embedding_dim": 100,
+                    "pretrained_file": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/glove/glove.840B.300d.lower.zip",
+                    "embedding_dim": 300,
                     "trainable": false
                 },
                 "token_characters": {

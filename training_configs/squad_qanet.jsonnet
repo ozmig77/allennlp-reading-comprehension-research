@@ -7,7 +7,8 @@
                 "lowercase_tokens": true
             },
             "token_characters": {
-                "type": "characters"
+                "type": "characters",
+                "min_padding_length": 5
             }
         },
         "passage_length_limit": 400,
@@ -79,7 +80,7 @@
             "hidden_dim": 128,
             "attention_projection_dim": 128,
             "feedforward_hidden_dim": 128,
-            "num_blocks": 6,
+            "num_blocks": 7,
             "num_convs_per_block": 2,
             "conv_kernel_size": 5,
             "num_attention_heads": 8,
@@ -110,7 +111,7 @@
                 "num_tokens"
             ]
         ],
-        "batch_size": 32,
+        "batch_size": 16,
         "max_instances_in_memory": 600
     },
     "trainer": {

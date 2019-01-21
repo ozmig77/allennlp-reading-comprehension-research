@@ -7,7 +7,8 @@
                 "lowercase_tokens": true
             },
             "token_characters": {
-                "type": "characters"
+                "type": "characters",
+                "min_padding_length": 5
             }
         },
         "passage_length_limit": 400,
@@ -15,10 +16,10 @@
         "passage_length_limit_for_evaluation": 1000,
         "question_length_limit_for_evaluation": 100
     },
-    "train_data_path": "fixtures/qanet_for_drop/drop.json",
-    "validation_data_path": "fixtures/qanet_for_drop/drop.json",
+    "train_data_path": "fixtures/aug_qanet/drop.json",
+    "validation_data_path": "fixtures/aug_qanet/drop.json",
     "model": {
-        "type": "qanet_for_drop",
+        "type": "augmented_qanet",
         "text_field_embedder": {
             "token_embedders": {
                 "tokens": {

@@ -3,31 +3,27 @@
 //   ArXiv/1611.01603 (2016)
 {
   "dataset_reader": {
-    "type": "drop",
+    "type": "squad",
     "token_indexers": {
-        "tokens": {
+      "tokens": {
         "type": "single_id",
-          "lowercase_tokens": true
+        "lowercase_tokens": true
+      },
+      "token_characters": {
+        "type": "characters",
+        "character_tokenizer": {
+          "byte_encoding": "utf-8",
+          "start_tokens": [259],
+          "end_tokens": [260]
         },
-        "token_characters": {
-            "type": "characters",
-            "character_tokenizer": {
-              "byte_encoding": "utf-8",
-              "start_tokens": [259],
-              "end_tokens": [260]
-            },
-            "min_padding_length": 5
-        }
-    },
-    "passage_length_limit": 400,
-    "question_length_limit": 50,
-    "passage_length_limit_for_evaluation": 1000,
-    "question_length_limit_for_evaluation": 100
+        "min_padding_length": 5
+      }
+    }
   },
-  "train_data_path": "",
-  "validation_data_path": "",
+  "train_data_path": "https://s3-us-west-2.amazonaws.com/allennlp/datasets/squad/squad-train-v1.1.json",
+  "validation_data_path": "https://s3-us-west-2.amazonaws.com/allennlp/datasets/squad/squad-dev-v1.1.json",
   "model": {
-    "type": "bidaf_marginal",
+    "type": "bidaf",
     "text_field_embedder": {
         "token_embedders": {
             "tokens": {

@@ -7,9 +7,14 @@
                 "lowercase_tokens": true
             },
             "token_characters": {
-                "type": "characters"
-            }
+                "type": "characters",
+                "min_padding_length": 5
+            },
+            "elmo": {
+                "type": "elmo_characters"
+            },
         },
+        "do_augmentation": false,
         "passage_length_limit": 400,
         "question_length_limit": 50,
         "passage_length_limit_for_evaluation": 1000,
@@ -24,8 +29,8 @@
         },
         "only_include_pretrained_words": true
     },
-    "train_data_path": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/sparc/drop_dataset_train.json",
-    "validation_data_path": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/sparc/drop_dataset_dev.json",
+    "train_data_path": "",
+    "validation_data_path": "",
     "model": {
         "type": "qanet",
         "text_field_embedder": {
@@ -49,7 +54,14 @@
                             5
                         ]
                     }
-                }
+                },
+                "elmo":{
+                    "type": "elmo_token_embedder",
+                    "options_file": "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway_5.5B/elmo_2x4096_512_2048cnn_2xhighway_5.5B_options.json",
+                    "weight_file": "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway_5.5B/elmo_2x4096_512_2048cnn_2xhighway_5.5B_weights.hdf5",
+                    "do_layer_norm": false,
+                    "dropout": 0.5
+                },
             }
         },
         "num_highway_layers": 2,
@@ -62,7 +74,7 @@
             "num_blocks": 1,
             "num_convs_per_block": 4,
             "conv_kernel_size": 7,
-            "num_attention_heads": 8,
+            "num_attention_heads": 4,
             "dropout_prob": 0.1,
             "layer_dropout_undecayed_prob": 0.1,
             "attention_dropout_prob": 0
@@ -82,12 +94,15 @@
             "num_blocks": 6,
             "num_convs_per_block": 2,
             "conv_kernel_size": 5,
-            "num_attention_heads": 8,
+            "num_attention_heads": 4,
             "dropout_prob": 0.1,
             "layer_dropout_undecayed_prob": 0.1,
             "attention_dropout_prob": 0
         },
         "dropout_prob": 0.1,
+        "metrics": {
+            "type": "drop"
+        },
         "regularizer": [
             [
                 ".*",

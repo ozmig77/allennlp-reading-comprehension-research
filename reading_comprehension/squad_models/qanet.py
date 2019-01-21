@@ -10,7 +10,7 @@ from allennlp.modules import Highway
 from allennlp.modules import Seq2SeqEncoder, TextFieldEmbedder
 from allennlp.modules.matrix_attention.matrix_attention import MatrixAttention
 from allennlp.nn import util, InitializerApplicator, RegularizerApplicator
-from allennlp.training.metrics import BooleanAccuracy, CategoricalAccuracy, SquadEmAndF1
+from allennlp.training.metrics import BooleanAccuracy, CategoricalAccuracy, SquadEmAndF1, Metric
 from reading_comprehension.utils import memory_effient_masked_softmax as masked_softmax
 
 
@@ -56,6 +56,7 @@ class QaNet(Model):
                  matrix_attention_layer: MatrixAttention,
                  modeling_layer: Seq2SeqEncoder,
                  dropout_prob: float = 0.1,
+                 metrics: Metric = SquadEmAndF1(),
                  initializer: InitializerApplicator = InitializerApplicator(),
                  regularizer: Optional[RegularizerApplicator] = None) -> None:
         super().__init__(vocab, regularizer)
@@ -85,7 +86,7 @@ class QaNet(Model):
         self._span_start_accuracy = CategoricalAccuracy()
         self._span_end_accuracy = CategoricalAccuracy()
         self._span_accuracy = BooleanAccuracy()
-        self._squad_metrics = SquadEmAndF1()
+        self._metrics = metrics
         self._dropout = torch.nn.Dropout(p=dropout_prob)
 
         initializer(self)
@@ -240,13 +241,13 @@ class QaNet(Model):
                 output_dict['best_span_str'].append(best_span_string)
                 answer_texts = metadata[i].get('answer_texts', [])
                 if answer_texts:
-                    self._squad_metrics(best_span_string, answer_texts)
+                    self._metrics(best_span_string, answer_texts)
             output_dict['question_tokens'] = question_tokens
             output_dict['passage_tokens'] = passage_tokens
         return output_dict
 
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
-        exact_match, f1_score = self._squad_metrics.get_metric(reset)
+        exact_match, f1_score = self._metrics.get_metric(reset)
         return {
                 'start_acc': self._span_start_accuracy.get_metric(reset),
                 'end_acc': self._span_end_accuracy.get_metric(reset),

@@ -18,10 +18,6 @@ class ResidualWithLayerDropout(torch.nn.Module):
                              f"but got {undecayed_dropout_prob}")
         self.undecayed_dropout_prob = undecayed_dropout_prob
 
-    def extra_repr(self) -> str:
-        inplace_str = ', inplace' if self.inplace else ''
-        return f"undecayed_dropout_prob={self.undecayed_dropout_prob}{inplace_str}"
-
     def forward(self, layer_input: torch.Tensor,
                 layer_output: torch.Tensor,
                 layer_index: int = None,
