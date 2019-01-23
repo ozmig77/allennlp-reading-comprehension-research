@@ -254,6 +254,7 @@ class EMATrainer(TrainerBase):
         """
         Trains one epoch and returns metrics.
         """
+        # pylint: disable=logging-fstring-interpolation
         logger.info("Epoch %d/%d", epoch, self._num_epochs - 1)
         peak_cpu_usage = peak_memory_mb()
         logger.info(f"Peak CPU memory usage MB: {peak_cpu_usage}")
