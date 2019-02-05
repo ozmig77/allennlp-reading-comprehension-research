@@ -1,24 +1,4 @@
-import torch
 from allennlp.data.tokenizers import Token
-
-
-def memory_effient_masked_softmax(vector: torch.Tensor, mask: torch.Tensor,
-                                  dim: int = -1, mask_value=-1e7) -> torch.Tensor:
-    """
-    This is an approximate version of `allennlp.nn.util.masked_softmax`.
-    By using less operations here than the original `masked_softmax`, we save a lot of memory.
-    But you should be careful that this function does not return an array of ``0.0``, as the
-    original `mask_softmax` does, in the case that the input vector is completely masked.
-    """
-    if mask is None:
-        result = torch.nn.functional.softmax(vector, dim=dim)
-    else:
-        mask = mask.float()
-        while mask.dim() < vector.dim():
-            mask = mask.unsqueeze(1)
-        # To limit numerical errors from large vector elements outside the mask, we zero these out.
-        result = torch.nn.functional.softmax(vector + (1 - mask) * mask_value, dim=dim)
-    return result
 
 
 def split_tokens_by_hyphen(tokens):
@@ -46,7 +26,8 @@ def split_tokens_by_hyphen(tokens):
             unsplit_tokens, split_tokens = [token], []
             for hyphen in hyphens:
                 for unsplit_token in unsplit_tokens:
-                    if hyphen in token.text:
+                    # `-` may represent a negative sign when it is the initial char
+                    if hyphen in token.text and not token.text.startswith("-"):
                         split_tokens += split_token_by_hyphen(unsplit_token, hyphen)
                     else:
                         split_tokens.append(unsplit_token)

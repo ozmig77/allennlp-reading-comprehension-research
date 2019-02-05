@@ -1,6 +1,7 @@
 import json
 import logging
 import itertools
+import string
 from typing import Dict, List, Union, Tuple, Any
 from collections import defaultdict
 from overrides import overrides
@@ -14,16 +15,10 @@ from allennlp.data.dataset_readers.reading_comprehension.util import IGNORED_TOK
 from allennlp.data.fields import Field, TextField, MetadataField, LabelField, ListField, \
     SequenceLabelField, SpanField, IndexField
 from reading_comprehension.utils import split_tokens_by_hyphen
+from word2number.w2n import word_to_num
+
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
-
-# TODO: Add more number here
-WORD_NUMBER_MAP = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4,
-                   "five": 5, "six": 6, "seven": 7, "eight": 8,
-                   "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
-                   "thirteen": 13, "fourteen": 14, "fifteen": 15,
-                   "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19}
 
 
 @DatasetReader.register("drop")
@@ -32,35 +27,61 @@ class DROPReader(DatasetReader):
                  tokenizer: Tokenizer = None,
                  token_indexers: Dict[str, TokenIndexer] = None,
                  lazy: bool = False,
-                 relaxed_span_match: bool = True,
-                 do_augmentation: bool = True,
                  passage_length_limit: int = None,
                  question_length_limit: int = None,
-                 passage_length_limit_for_evaluation: int = None,
-                 question_length_limit_for_evaluation: int = None) -> None:
+                 skip_invalid_examples: bool = False,
+                 load_squad_style_instances: bool = False,
+                 relaxed_span_match_for_finding_labels: bool = True) -> None:
+        """
+        Reads a JSON-formatted DROP dataset file and returns a ``Dataset``
+
+        Parameters
+        ----------
+        tokenizer : ``Tokenizer``, optional (default=``WordTokenizer()``)
+            We use this ``Tokenizer`` for both the question and the passage.  See :class:`Tokenizer`.
+            Default is ```WordTokenizer()``.
+        token_indexers : ``Dict[str, TokenIndexer]``, optional
+            We similarly use this for both the question and the passage.  See :class:`TokenIndexer`.
+            Default is ``{"tokens": SingleIdTokenIndexer()}``.
+        lazy : ``bool``, optional (default=False)
+            If this is true, ``instances()`` will return an object whose ``__iter__`` method
+            reloads the dataset each time it's called. Otherwise, ``instances()`` returns a list.
+        passage_length_limit : ``int``, optional (default=None)
+            if specified, we will cut the passage if the length of passage exceeds this limit.
+        question_length_limit : ``int``, optional (default=None)
+            if specified, we will cut the question if the length of passage exceeds this limit.
+        skip_invalid_examples: ``bool``, optional (default=False)
+            if this is true, we will skip those invalid examples
+        load_squad_style_instances : ``bool``, optional (default=True)
+            if this is true, we will load the data instances with the same format as SQuAD reader,
+            without considering the characteristics of DROP dataset.
+        relaxed_span_match_for_finding_labels : ``bool``, optional (default=True)
+            DROP dataset contains multi-span answers, and the date-type answers usually cannot find
+            a single passage span to match it, either. In order to use as many examples as possible
+            to train the model, we may not want a strict match for such cases when finding the gold
+            span labels. If this argument is true, we will treat every span in the multi-span answers
+            as correct, and every token in the date answer as correct, too. Note that this will not
+            affect evaluation.
+        """
         super().__init__(lazy)
         self._tokenizer = tokenizer or WordTokenizer()
         self._token_indexers = token_indexers or {"tokens": SingleIdTokenIndexer()}
-        self._relaxed_span_match = relaxed_span_match
-        self._do_augmentation = do_augmentation
         self.passage_length_limit = passage_length_limit
         self.question_length_limit = question_length_limit
-        self.passage_length_limit_for_eval = passage_length_limit_for_evaluation or passage_length_limit
-        self.question_length_limit_for_eval = question_length_limit_for_evaluation or question_length_limit
+        self.skip_invalid_examples = skip_invalid_examples
+        self._load_squad_style_instances = load_squad_style_instances
+        self._relaxed_span_match_for_finding_labels = relaxed_span_match_for_finding_labels
 
     @overrides
     def _read(self, file_path: str):
         # pylint: disable=logging-fstring-interpolation
         # if `file_path` is a URL, redirect to the cache
-        is_train = "train" in str(file_path)
         file_path = cached_path(file_path)
         logger.info("Reading file at %s", file_path)
         with open(file_path) as dataset_file:
             dataset = json.load(dataset_file)
         logger.info("Reading the dataset")
         instances, skip_count = [], 0
-        max_passage_len = self.passage_length_limit if is_train else self.passage_length_limit_for_eval
-        max_question_len = self.question_length_limit if is_train else self.question_length_limit_for_eval
         for passage_id, passage_info in dataset.items():
             passage_text = passage_info["passage"]
             passage_tokens = self._tokenizer.tokenize(passage_text)
@@ -74,10 +95,7 @@ class DROPReader(DatasetReader):
                                                  question_id,
                                                  passage_id,
                                                  answer_annotation,
-                                                 passage_tokens,
-                                                 max_passage_len,
-                                                 max_question_len,
-                                                 drop_invalid=is_train)
+                                                 passage_tokens)
                 if instance is not None:
                     instances.append(instance)
                 else:
@@ -92,10 +110,7 @@ class DROPReader(DatasetReader):
                          question_id: str = None,
                          passage_id: str = None,
                          answer_annotation: Dict[str, Union[str, Dict, List]] = None,
-                         passage_tokens: List[Token] = None,
-                         max_passage_len: int = None,
-                         max_question_len: int = None,
-                         drop_invalid: bool = False) -> Union[Instance, None]:
+                         passage_tokens: List[Token] = None) -> Union[Instance, None]:
         # pylint: disable=arguments-differ
         if not passage_tokens:
             passage_tokens = self._tokenizer.tokenize(passage_text)
@@ -104,20 +119,20 @@ class DROPReader(DatasetReader):
         question_tokens = split_tokens_by_hyphen(question_tokens)
         # passage_text = question_text
         # passage_tokens = question_tokens
-        if max_passage_len is not None:
-            passage_tokens = passage_tokens[: max_passage_len]
-        if max_question_len is not None:
-            question_tokens = question_tokens[: max_question_len]
+        if self.passage_length_limit is not None:
+            passage_tokens = passage_tokens[: self.passage_length_limit]
+        if self.question_length_limit is not None:
+            question_tokens = question_tokens[: self.question_length_limit]
 
         answer_type, answer_texts = None, []
         if answer_annotation is not None:
-            answer_type, answer_texts = self.convert_answer(answer_annotation)
+            answer_type, answer_texts = self.extract_answer_info_from_annotation(answer_annotation)
 
         # The original answer_texts is a list, because we treat the all spans and all date tokens as correct.
         # This is useful when finding the matched spans for training.
         # However, for evaluation, all tokens should be regard as one single answer.
         answer_texts_for_evaluation = [' '.join(answer_texts)]
-        if not self._relaxed_span_match:
+        if not self._relaxed_span_match_for_finding_labels:
             answer_texts = answer_texts_for_evaluation
 
         # Tokenize the answer text in order to find the matched span based on token
@@ -127,13 +142,14 @@ class DROPReader(DatasetReader):
             answer_tokens = split_tokens_by_hyphen(answer_tokens)
             tokenized_answer_texts.append(' '.join(token.text for token in answer_tokens))
 
-        if not self._do_augmentation:
+        if self._load_squad_style_instances:
             valid_passage_spans = \
                 self.find_valid_spans(passage_tokens, tokenized_answer_texts) if tokenized_answer_texts else []
-            if not valid_passage_spans and drop_invalid:
-                return None
             if not valid_passage_spans:
-                valid_passage_spans = [(0, 0)]
+                if self.skip_invalid_examples:
+                    return None
+                else:
+                    valid_passage_spans.append((len(passage_tokens) - 1, len(passage_tokens) - 1))
             return make_reading_comprehension_instance(question_tokens,
                                                        passage_tokens,
                                                        self._token_indexers,
@@ -150,7 +166,7 @@ class DROPReader(DatasetReader):
             numbers_in_passage = []
             number_indices = []
             for token_index, token in enumerate(passage_tokens):
-                number = self.convert_string_to_int(token.text)
+                number = self.convert_word_to_number(token.text)
                 if number is not None:
                     numbers_in_passage.append(number)
                     number_indices.append(token_index)
@@ -158,35 +174,43 @@ class DROPReader(DatasetReader):
             numbers_in_passage.append(0)
             number_indices.append(-1)
             numbers_as_tokens = [Token(str(number)) for number in numbers_in_passage]
+
             valid_passage_spans = \
                 self.find_valid_spans(passage_tokens, tokenized_answer_texts) if tokenized_answer_texts else []
             valid_question_spans = \
                 self.find_valid_spans(question_tokens, tokenized_answer_texts) if tokenized_answer_texts else []
+
             target_numbers = []
+            # `answer_texts` is a list of valid answers.
             for answer_text in answer_texts:
-                number = self.convert_string_to_int(answer_text)
+                number = self.convert_word_to_number(answer_text)
                 if number is not None:
                     target_numbers.append(number)
-            valid_plus_minus_combinations = []
-            if answer_type in ["number", "date"]:
-                valid_plus_minus_combinations = \
-                    self.find_valid_plus_minus_combinations(numbers_in_passage, target_numbers)
+            valid_signs_for_add_sub_expressions = []
             valid_counts = []
-            if answer_type == "number":
+            if target_numbers:
+                valid_signs_for_add_sub_expressions = \
+                    self.find_valid_add_sub_expressions(numbers_in_passage, target_numbers)
                 numbers_for_count = list(range(10))
-                valid_counts = self.find_valid_count(numbers_for_count, target_numbers)
+                valid_counts = self.find_valid_counts(numbers_for_count, target_numbers)
+
+            # if not valid_passage_spans:
+            #     if self.skip_invalid_examples:
+            #         return None
+            #     else:
+            #         valid_passage_spans.append((-1, -1))
 
             if not valid_passage_spans \
                     and not valid_question_spans \
-                    and not valid_plus_minus_combinations \
-                    and not valid_counts \
-                    and drop_invalid:
-                return None
+                    and not valid_signs_for_add_sub_expressions \
+                    and not valid_counts:
+                if self.skip_invalid_examples:
+                    return None
 
             answer_info = {"answer_texts": answer_texts_for_evaluation,
                            "answer_passage_spans": valid_passage_spans,
                            "answer_question_spans": valid_question_spans,
-                           "plus_minus_combinations": valid_plus_minus_combinations,
+                           "signs_for_add_sub_expressions": valid_signs_for_add_sub_expressions,
                            "counts": valid_counts}
 
             return self.make_augmented_instance(question_tokens,
@@ -250,14 +274,14 @@ class DROPReader(DatasetReader):
                 question_span_fields.append(SpanField(-1, -1, fields["question"]))
             fields["answer_as_question_spans"] = ListField(question_span_fields)
 
-            plus_minus_combinations_fields = []
-            for plus_minus_combination in answer_info["plus_minus_combinations"]:
-                plus_minus_combinations_fields.append(
-                        SequenceLabelField(plus_minus_combination, fields["numbers_in_passage"]))
-            if not plus_minus_combinations_fields:
-                plus_minus_combinations_fields.append(
+            add_sub_signs_field = []
+            for signs_for_one_add_sub_expression in answer_info["signs_for_add_sub_expressions"]:
+                add_sub_signs_field.append(
+                        SequenceLabelField(signs_for_one_add_sub_expression, fields["numbers_in_passage"]))
+            if not add_sub_signs_field:
+                add_sub_signs_field.append(
                         SequenceLabelField([0] * len(fields["numbers_in_passage"]), fields["numbers_in_passage"]))
-            fields["answer_as_plus_minus_combinations"] = ListField(plus_minus_combinations_fields)
+            fields["answer_as_add_sub_expressions"] = ListField(add_sub_signs_field)
 
             count_fields = [LabelField(count_label, skip_indexing=True) for count_label in answer_info["counts"]]
             if not count_fields:
@@ -269,15 +293,56 @@ class DROPReader(DatasetReader):
         return Instance(fields)
 
     @staticmethod
-    def convert_string_to_int(string: str):
-        no_comma_string = string.replace(",", "")
-        if no_comma_string in WORD_NUMBER_MAP:
-            number = WORD_NUMBER_MAP[no_comma_string]
-        else:
+    def extract_answer_info_from_annotation(answer_annotation: Dict[str, Union[str, Dict, List]]) -> Tuple[str, List]:
+        answer_type = None
+        if answer_annotation["spans"]:
+            answer_type = "spans"
+        elif answer_annotation["number"]:
+            answer_type = "number"
+        elif any(answer_annotation["date"].values()):
+            answer_type = "date"
+
+        answer_content = answer_annotation[answer_type] if answer_type is not None else None
+
+        answer_texts = []
+        if answer_type is None:  # No answer
+            pass
+        elif answer_type == "spans":
+            # answer_content is a list of string in this case
+            answer_texts = answer_content
+        elif answer_type == "date":
+            # answer_content is a dict with "month", "day", "year" as the keys
+            date_tokens = [answer_content[key]
+                           for key in ["month", "day", "year"] if key in answer_content and answer_content[key]]
+            answer_texts = date_tokens
+        elif answer_type == "number":
+            # answer_content is a string of number
+            answer_texts = [answer_content]
+        return answer_type, answer_texts
+
+    @staticmethod
+    def convert_word_to_number(word: str):
+        """
+        Currently we only support limited types of conversion.
+        """
+        # strip all punctuations from the sides of the word, except for the negative sign
+        punctruations = string.punctuation.replace('-', '')
+        word = word.strip(punctruations)
+        # some words may contain the comma as deliminator
+        word = word.replace(",", "")
+        # word2num will convert hundred, thousand ... to number, but we skip it.
+        if word in ["hundred", "thousand", "million", "billion", "trillion"]:
+            return None
+        try:
+            number = word_to_num(word)
+        except ValueError:
             try:
-                number = int(no_comma_string)
+                number = int(word)
             except ValueError:
-                number = None
+                try:
+                    number = float(word)
+                except ValueError:
+                    number = None
         return number
 
     @staticmethod
@@ -310,57 +375,29 @@ class DROPReader(DatasetReader):
         return spans
 
     @staticmethod
-    def find_valid_plus_minus_combinations(numbers: List[int],
-                                           targets: List[int],
-                                           max_length_of_combinations: int = 2) -> List[List[int]]:
-        valid_combinations = []
-        for combination_length in range(2, max_length_of_combinations + 1):
-            possible_signs = list(itertools.product((-1, 1), repeat=combination_length))
-            for combination in itertools.combinations(enumerate(numbers), combination_length):
-                indices = [it[0] for it in combination]
-                values = [it[1] for it in combination]
+    def find_valid_add_sub_expressions(numbers: List[int],
+                                       targets: List[int],
+                                       max_number_of_numbers_to_consider: int = 2) -> List[List[int]]:
+        valid_signs_for_add_sub_expressions = []
+        for number_of_numbers_to_consider in range(2, max_number_of_numbers_to_consider + 1):
+            possible_signs = list(itertools.product((-1, 1), repeat=number_of_numbers_to_consider))
+            for number_combination in itertools.combinations(enumerate(numbers), number_of_numbers_to_consider):
+                indices = [it[0] for it in number_combination]
+                values = [it[1] for it in number_combination]
                 for signs in possible_signs:
                     eval_value = sum(sign * value for sign, value in zip(signs, values))
                     if eval_value in targets:
                         labels_for_numbers = [0] * len(numbers)  # 0 represents ``not included''.
                         for index, sign in zip(indices, signs):
                             labels_for_numbers[index] = 1 if sign == 1 else 2  # 1 for positive, 2 for negative
-                        valid_combinations.append(labels_for_numbers)
-        return valid_combinations
+                        valid_signs_for_add_sub_expressions.append(labels_for_numbers)
+        return valid_signs_for_add_sub_expressions
 
     @staticmethod
-    def find_valid_count(count_numbers: List[int],
-                         targets: List[int]) -> List[int]:
+    def find_valid_counts(count_numbers: List[int],
+                          targets: List[int]) -> List[int]:
         valid_indices = []
         for index, number in enumerate(count_numbers):
             if number in targets:
                 valid_indices.append(index)
         return valid_indices
-
-    @staticmethod
-    def convert_answer(answer_annotation: Dict[str, Union[str, Dict, List]]) -> Tuple[str, List]:
-        answer_type = None
-        if answer_annotation["spans"]:
-            answer_type = "spans"
-        elif answer_annotation["number"]:
-            answer_type = "number"
-        elif any(answer_annotation["date"].values()):
-            answer_type = "date"
-
-        answer_content = answer_annotation[answer_type] if answer_type is not None else None
-
-        answer_texts = []
-        if answer_type is None:  # No answer
-            pass
-        elif answer_type == "spans":
-            # answer_content is a list of string in this case
-            answer_texts = answer_content
-        elif answer_type == "date":
-            # answer_content is a dict with "month", "day", "year" as the keys
-            date_tokens = [answer_content[key]
-                           for key in ["month", "day", "year"] if key in answer_content and answer_content[key]]
-            answer_texts = date_tokens
-        elif answer_type == "number":
-            # answer_content is a string of number
-            answer_texts = [answer_content]
-        return answer_type, answer_texts

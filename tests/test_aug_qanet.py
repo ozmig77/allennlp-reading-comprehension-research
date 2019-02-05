@@ -1,10 +1,9 @@
 #pylint: disable=unused-import
 import pathlib
 from allennlp.common.testing import ModelTestCase
-from reading_comprehension.modules.qanet_encoder import QaNetEncoder
-from reading_comprehension.ema_trainer import EMATrainer
 from reading_comprehension.drop_models.augmented_qanet import AugmentedQANet
 from reading_comprehension.data.drop_reader import DROPReader
+
 
 class QANetModelTest(ModelTestCase):
 

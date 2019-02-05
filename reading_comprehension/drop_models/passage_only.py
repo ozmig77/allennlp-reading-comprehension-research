@@ -6,37 +6,23 @@ from torch.nn.functional import nll_loss
 from allennlp.data import Vocabulary
 from allennlp.models.model import Model
 from allennlp.modules import Highway
-from allennlp.models.reading_comprehension.bidaf import BidirectionalAttentionFlow
 from allennlp.modules import Seq2SeqEncoder, TextFieldEmbedder
 from allennlp.nn import util, InitializerApplicator, RegularizerApplicator
 from allennlp.training.metrics import BooleanAccuracy, CategoricalAccuracy
+from allennlp.models.reading_comprehension.util import get_best_span
 from reading_comprehension.drop_em_and_f1 import DropEmAndF1
 
 
-@Model.register("passage_only_qanet")
-class PassageOnlyQaNet(Model):
+# TODO: Change this to marginal loss
+@Model.register("passage_only")
+class PassageOnlyRcModel(Model):
     """
-    This class will encode the passage using a encoder,
-    and then predict a span for answer without considering the question.
+    This class will encode the passage using a encoder, and then predict a span for
+    answer without considering the question.
 
-    Parameters
-    ----------
-    vocab : ``Vocabulary``
-    text_field_embedder : ``TextFieldEmbedder``
-        Used to embed the ``question`` and ``passage`` ``TextFields`` we get as input to the model.
-    num_highway_layers : ``int``
-        The number of highway layers to use in between embedding the input and passing it through
-        the phrase layer.
-    encoding_layer : ``Seq2SeqEncoder``
-        The encoder (with its own internal stacking) that we will use in encoding the passage.
-    dropout_prob : ``float``, optional (default=0.1)
-        If greater than 0, we will apply dropout with this probability between layers.
-    initializer : ``InitializerApplicator``, optional (default=``InitializerApplicator()``)
-        Used to initialize the model parameters.
-    regularizer : ``RegularizerApplicator``, optional (default=``None``)
-        If provided, will be used to calculate the regularization penalty during training.
+    If you want to test the question-only baseline, just replace the passage with question
+    when loading data in the data reader.
     """
-
     def __init__(self, vocab: Vocabulary,
                  text_field_embedder: TextFieldEmbedder,
                  num_highway_layers: int,
@@ -92,9 +78,9 @@ class PassageOnlyQaNet(Model):
         span_end_input = torch.cat([encoded_passage_list[-3], encoded_passage_list[-1]], dim=-1)
         span_end_logits = self._span_end_predictor(span_end_input).squeeze(-1)
 
-        span_start_logits = util.replace_masked_values(span_start_logits, passage_mask, -1e7)
-        span_end_logits = util.replace_masked_values(span_end_logits, passage_mask, -1e7)
-        best_span = BidirectionalAttentionFlow.get_best_span(span_start_logits, span_end_logits)
+        span_start_logits = util.replace_masked_values(span_start_logits, passage_mask, -1e32)
+        span_end_logits = util.replace_masked_values(span_end_logits, passage_mask, -1e32)
+        best_span = get_best_span(span_start_logits, span_end_logits)
 
         output_dict = {}
 

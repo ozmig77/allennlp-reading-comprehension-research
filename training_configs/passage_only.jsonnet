@@ -9,35 +9,48 @@
             "token_characters": {
                 "type": "characters",
                 "min_padding_length": 5
-            },
-            "elmo": {
-                "type": "elmo_characters"
-            },
+            }
         },
-        "do_augmentation": false,
         "passage_length_limit": 400,
         "question_length_limit": 50,
-        "passage_length_limit_for_evaluation": 1000,
-        "question_length_limit_for_evaluation": 100
+        "skip_invalid_examples": true,
+        "load_squad_style_instances": true
+    },
+    "validation_dataset_reader": {
+        "type": "drop",
+        "token_indexers": {
+            "tokens": {
+                "type": "single_id",
+                "lowercase_tokens": true
+            },
+            "token_characters": {
+                "type": "characters",
+                "min_padding_length": 5
+            }
+        },
+        "passage_length_limit": 1000,
+        "question_length_limit": 100,
+        "skip_invalid_examples": false,
+        "load_squad_style_instances": true
     },
     "vocabulary": {
         "min_count": {
             "token_characters": 200
         },
         "pretrained_files": {
-            "tokens": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/glove/glove.840B.300d.lower.zip"
+            "tokens": "https://s3-us-west-2.amazonaws.com/allennlp/datasets/glove/glove.840B.300d.lower.converted.zip"
         },
         "only_include_pretrained_words": true
     },
-    "train_data_path": "",
-    "validation_data_path": "",
+    "train_data_path": std.extVar("DROP_TRAIN_DATA_PATH"),
+    "validation_data_path": std.extVar("DROP_DEV_DATA_PATH"),
     "model": {
-        "type": "qanet",
+        "type": "passage_only",
         "text_field_embedder": {
             "token_embedders": {
                 "tokens": {
                     "type": "embedding",
-                    "pretrained_file": "https://s3-us-west-2.amazonaws.com/yizhongw-dev/glove/glove.840B.300d.lower.zip",
+                    "pretrained_file": "https://s3-us-west-2.amazonaws.com/allennlp/datasets/glove/glove.840B.300d.lower.converted.zip",
                     "embedding_dim": 300,
                     "trainable": false
                 },
@@ -54,38 +67,11 @@
                             5
                         ]
                     }
-                },
-                "elmo":{
-                    "type": "elmo_token_embedder",
-                    "options_file": "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway_5.5B/elmo_2x4096_512_2048cnn_2xhighway_5.5B_options.json",
-                    "weight_file": "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway_5.5B/elmo_2x4096_512_2048cnn_2xhighway_5.5B_weights.hdf5",
-                    "do_layer_norm": false,
-                    "dropout": 0.5
-                },
+                }
             }
         },
         "num_highway_layers": 2,
-        "phrase_layer": {
-            "type": "qanet_encoder",
-            "input_dim": 128,
-            "hidden_dim": 128,
-            "attention_projection_dim": 128,
-            "feedforward_hidden_dim": 128,
-            "num_blocks": 1,
-            "num_convs_per_block": 4,
-            "conv_kernel_size": 7,
-            "num_attention_heads": 4,
-            "dropout_prob": 0.1,
-            "layer_dropout_undecayed_prob": 0.1,
-            "attention_dropout_prob": 0
-        },
-        "matrix_attention_layer": {
-            "type": "linear",
-            "tensor_1_dim": 128,
-            "tensor_2_dim": 128,
-            "combination": "x,y,x*y"
-        },
-        "modeling_layer": {
+        "encoding_layer": {
             "type": "qanet_encoder",
             "input_dim": 128,
             "hidden_dim": 128,
@@ -94,15 +80,12 @@
             "num_blocks": 6,
             "num_convs_per_block": 2,
             "conv_kernel_size": 5,
-            "num_attention_heads": 4,
+            "num_attention_heads": 8,
             "dropout_prob": 0.1,
             "layer_dropout_undecayed_prob": 0.1,
             "attention_dropout_prob": 0
         },
         "dropout_prob": 0.1,
-        "metrics": {
-            "type": "drop"
-        },
         "regularizer": [
             [
                 ".*",
@@ -129,7 +112,6 @@
         "max_instances_in_memory": 600
     },
     "trainer": {
-        "type": "ema_trainer",
         "num_epochs": 50,
         "grad_norm": 5,
         "patience": 10,

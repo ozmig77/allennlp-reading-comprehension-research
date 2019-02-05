@@ -87,6 +87,12 @@
                     "alpha": 1e-07
                 }
             ]
+        ],
+        "answering_abilities": [
+            "passage_span_extraction",
+            "question_span_extraction",
+            "addition_subtraction",
+            "counting"
         ]
     },
     "iterator": {
@@ -94,7 +100,6 @@
         "batch_size": 16
     },
     "trainer": {
-        "type": "ema_trainer",
         "num_epochs": 1,
         "grad_norm": 5,
         "patience": 10,

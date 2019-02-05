@@ -16,9 +16,8 @@ from reading_comprehension.drop_em_and_f1 import DropEmAndF1
 @Model.register("bidaf_marginal")
 class BiDAFMarginal(Model):
     """
-    This class adapts the QANet model to do question answering on DROP dataset.
+    This class adapts the BiDAF model to do question answering on DROP dataset.
     """
-
     def __init__(self, vocab: Vocabulary,
                  text_field_embedder: TextFieldEmbedder,
                  num_highway_layers: int,
@@ -71,7 +70,7 @@ class BiDAFMarginal(Model):
                 number_indices: torch.LongTensor,
                 answer_as_passage_spans: torch.LongTensor = None,
                 answer_as_question_spans: torch.LongTensor = None,
-                answer_as_plus_minus_combinations: torch.LongTensor = None,
+                answer_as_add_sub_expressions: torch.LongTensor = None,
                 answer_as_counts: torch.LongTensor = None,
                 metadata: List[Dict[str, Any]] = None) -> Dict[str, torch.Tensor]:
         # pylint: disable=arguments-differ, unused-argument
@@ -166,27 +165,27 @@ class BiDAFMarginal(Model):
         # If answer is given, compute the loss for training.
         if answer_as_passage_spans is not None:
             # Shape: (batch_size, # of answer spans)
-            passage_span_starts = answer_as_passage_spans[:, :, 0]
-            passage_span_ends = answer_as_passage_spans[:, :, 1]
-            # Some spans are padded with index -1, so we need to mask them
-            passage_span_mask = (passage_span_starts != -1).float()
-            clamped_passage_span_starts = torch.nn.functional.relu(passage_span_starts)
-            clamped_passage_span_ends = torch.nn.functional.relu(passage_span_ends)
+            gold_passage_span_starts = answer_as_passage_spans[:, :, 0]
+            gold_passage_span_ends = answer_as_passage_spans[:, :, 1]
+            # Some spans are padded with index -1,
+            # so we clamp those paddings to 0 and then mask after `torch.gather()`.
+            gold_passage_span_mask = (gold_passage_span_starts != -1).long()
+            clamped_gold_passage_span_starts = gold_passage_span_starts * gold_passage_span_mask
+            clamped_gold_passage_ends = gold_passage_span_ends * gold_passage_span_mask
             # Shape: (batch_size, # of answer spans)
             log_likelihood_for_passage_span_starts = \
-                torch.gather(passage_span_start_log_probs, 1, clamped_passage_span_starts)
+                torch.gather(passage_span_start_log_probs, 1, clamped_gold_passage_span_starts)
             log_likelihood_for_passage_span_ends = \
-                torch.gather(passage_span_end_log_probs, 1, clamped_passage_span_ends)
+                torch.gather(passage_span_end_log_probs, 1, clamped_gold_passage_ends)
             # Shape: (batch_size, # of answer spans)
             log_likelihood_for_passage_spans = \
                 log_likelihood_for_passage_span_starts + log_likelihood_for_passage_span_ends
             # For those padded spans, we set their log probabilities to be very small negative value
             log_likelihood_for_passage_spans = \
-                util.replace_masked_values(log_likelihood_for_passage_spans, passage_span_mask, -1e10)
+                util.replace_masked_values(log_likelihood_for_passage_spans, gold_passage_span_mask.float(), -1e32)
             # Shape: (batch_size, )
-            log_marginal_likelihood_for_passage_spans = util.logsumexp(log_likelihood_for_passage_spans)
-
-            output_dict["loss"] = - log_marginal_likelihood_for_passage_spans.mean()
+            log_marginal_likelihood_for_passage_span = util.logsumexp(log_likelihood_for_passage_spans)
+            output_dict["loss"] = - log_marginal_likelihood_for_passage_span.mean()
 
         # Compute the metrics and add the tokenized input to the output.
         if metadata is not None:
@@ -197,7 +196,6 @@ class BiDAFMarginal(Model):
             for i in range(batch_size):
                 question_tokens.append(metadata[i]['question_tokens'])
                 passage_tokens.append(metadata[i]['passage_tokens'])
-
                 # We did not consider multi-mention answers here
                 passage_str = metadata[i]['original_passage']
                 offsets = metadata[i]['passage_token_offsets']
