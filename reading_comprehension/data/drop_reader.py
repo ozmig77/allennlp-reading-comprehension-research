@@ -29,8 +29,8 @@ class DROPReader(DatasetReader):
                  lazy: bool = False,
                  passage_length_limit: int = None,
                  question_length_limit: int = None,
-                 skip_invalid_examples: bool = False,
-                 load_squad_style_instances: bool = False,
+                 skip_when_all_empty: List[str] = None,
+                 instance_format: str = "drop",
                  relaxed_span_match_for_finding_labels: bool = True) -> None:
         """
         Reads a JSON-formatted DROP dataset file and returns a ``Dataset``
@@ -47,14 +47,18 @@ class DROPReader(DatasetReader):
             If this is true, ``instances()`` will return an object whose ``__iter__`` method
             reloads the dataset each time it's called. Otherwise, ``instances()`` returns a list.
         passage_length_limit : ``int``, optional (default=None)
-            if specified, we will cut the passage if the length of passage exceeds this limit.
+            If specified, we will cut the passage if the length of passage exceeds this limit.
         question_length_limit : ``int``, optional (default=None)
-            if specified, we will cut the question if the length of passage exceeds this limit.
-        skip_invalid_examples: ``bool``, optional (default=False)
-            if this is true, we will skip those invalid examples
-        load_squad_style_instances : ``bool``, optional (default=True)
-            if this is true, we will load the data instances with the same format as SQuAD reader,
-            without considering the characteristics of DROP dataset.
+            If specified, we will cut the question if the length of passage exceeds this limit.
+        skip_when_all_empty: ``List[str]``, optional (default=None)
+            In some cases such as preparing for training examples, you may want to skip some examples
+            when there are no gold labels. You can specify on what condition should the examples be
+            skipped. Currently, you can put "passage_span", "question_span", "addition_subtraction",
+            or "counting" in this list, to tell the reader skip when there are no such label found.
+            If not specified, we will keep all the examples.
+        instance_format: ``str``, optional (default="drop")
+            Since we want to test different kind of models on DROP dataset, and they may require
+            different instance format. Current, we support three formats: "drop", "squad" and "bert".
         relaxed_span_match_for_finding_labels : ``bool``, optional (default=True)
             DROP dataset contains multi-span answers, and the date-type answers usually cannot find
             a single passage span to match it, either. In order to use as many examples as possible
@@ -68,9 +72,12 @@ class DROPReader(DatasetReader):
         self._token_indexers = token_indexers or {"tokens": SingleIdTokenIndexer()}
         self.passage_length_limit = passage_length_limit
         self.question_length_limit = question_length_limit
-        self.skip_invalid_examples = skip_invalid_examples
-        self._load_squad_style_instances = load_squad_style_instances
-        self._relaxed_span_match_for_finding_labels = relaxed_span_match_for_finding_labels
+        for item in skip_when_all_empty:
+            assert item in ["passage_span", "question_span", "addition_subtraction", "counting"], \
+                f"Unsupported skip type: {item}"
+        self.skip_when_all_empty = skip_when_all_empty if skip_when_all_empty is not None else []
+        self.instance_format = instance_format
+        self.relaxed_span_match_for_finding_labels = relaxed_span_match_for_finding_labels
 
     @overrides
     def _read(self, file_path: str):
@@ -132,7 +139,7 @@ class DROPReader(DatasetReader):
         # This is useful when finding the matched spans for training.
         # However, for evaluation, all tokens should be regard as one single answer.
         answer_texts_for_evaluation = [' '.join(answer_texts)]
-        if not self._relaxed_span_match_for_finding_labels:
+        if not self.relaxed_span_match_for_finding_labels:
             answer_texts = answer_texts_for_evaluation
 
         # Tokenize the answer text in order to find the matched span based on token
@@ -142,11 +149,11 @@ class DROPReader(DatasetReader):
             answer_tokens = split_tokens_by_hyphen(answer_tokens)
             tokenized_answer_texts.append(' '.join(token.text for token in answer_tokens))
 
-        if self._load_squad_style_instances:
+        if self.instance_format == "squad":
             valid_passage_spans = \
                 self.find_valid_spans(passage_tokens, tokenized_answer_texts) if tokenized_answer_texts else []
             if not valid_passage_spans:
-                if self.skip_invalid_examples:
+                if "passage_span" in self.skip_when_all_empty:
                     return None
                 else:
                     valid_passage_spans.append((len(passage_tokens) - 1, len(passage_tokens) - 1))
@@ -162,7 +169,32 @@ class DROPReader(DatasetReader):
                                                                "passage_id": passage_id,
                                                                "question_id": question_id,
                                                                "valid_passage_spans": valid_passage_spans})
-        else:
+        elif self.instance_format == "bert":
+            question_concat_passage_tokens = question_tokens + [Token("[SEP]")] + passage_tokens
+            valid_passage_spans = []
+            for span in self.find_valid_spans(passage_tokens, tokenized_answer_texts):
+                valid_passage_spans.append((span[0] + len(question_tokens) + 1, span[1] + len(question_tokens) + 1))
+            if not valid_passage_spans:
+                if "passage_span" in self.skip_when_all_empty:
+                    return None
+                else:
+                    valid_passage_spans.append((len(question_concat_passage_tokens) - 1,
+                                                len(question_concat_passage_tokens) - 1))
+            answer_info = {"answer_texts": answer_texts_for_evaluation,
+                           "answer_passage_spans": valid_passage_spans}
+            return self.make_bert_drop_instance(question_tokens,
+                                                passage_tokens,
+                                                question_concat_passage_tokens,
+                                                self._token_indexers,
+                                                passage_text,
+                                                answer_info,
+                                                additional_metadata={
+                                                    "original_passage": passage_text,
+                                                    "original_question": question_text,
+                                                    "passage_id": passage_id,
+                                                    "question_id": question_id}
+                                                )
+        elif self.instance_format == "drop":
             numbers_in_passage = []
             number_indices = []
             for token_index, token in enumerate(passage_tokens):
@@ -194,18 +226,14 @@ class DROPReader(DatasetReader):
                 numbers_for_count = list(range(10))
                 valid_counts = self.find_valid_counts(numbers_for_count, target_numbers)
 
-            # if not valid_passage_spans:
-            #     if self.skip_invalid_examples:
-            #         return None
-            #     else:
-            #         valid_passage_spans.append((-1, -1))
+            type_to_answer_map = {"passage_span": valid_passage_spans,
+                                  "question_span": valid_question_spans,
+                                  "addition_subtraction": valid_signs_for_add_sub_expressions,
+                                  "counting": valid_counts}
 
-            if not valid_passage_spans \
-                    and not valid_question_spans \
-                    and not valid_signs_for_add_sub_expressions \
-                    and not valid_counts:
-                if self.skip_invalid_examples:
-                    return None
+            if self.skip_when_all_empty \
+                    and all(len(type_to_answer_map[skip_type]) == 0 for skip_type in self.skip_when_all_empty):
+                return None
 
             answer_info = {"answer_texts": answer_texts_for_evaluation,
                            "answer_passage_spans": valid_passage_spans,
@@ -213,30 +241,33 @@ class DROPReader(DatasetReader):
                            "signs_for_add_sub_expressions": valid_signs_for_add_sub_expressions,
                            "counts": valid_counts}
 
-            return self.make_augmented_instance(question_tokens,
-                                                passage_tokens,
-                                                numbers_as_tokens,
-                                                number_indices,
-                                                self._token_indexers,
-                                                passage_text,
-                                                answer_info,
-                                                additional_metadata={
+            return self.make_marginal_drop_instance(question_tokens,
+                                                    passage_tokens,
+                                                    numbers_as_tokens,
+                                                    number_indices,
+                                                    self._token_indexers,
+                                                    passage_text,
+                                                    answer_info,
+                                                    additional_metadata={
                                                         "original_passage": passage_text,
                                                         "original_question": question_text,
                                                         "original_numbers": numbers_in_passage,
                                                         "passage_id": passage_id,
                                                         "question_id": question_id,
                                                         "answer_info": answer_info})
+        else:
+            raise ValueError(f"Expect the instance format to be \"drop\", \"squad\" or \"bert\", "
+                             f"but got {self.instance_format}")
 
     @staticmethod
-    def make_augmented_instance(question_tokens: List[Token],
-                                passage_tokens: List[Token],
-                                number_tokens: List[Token],
-                                number_indices: List[int],
-                                token_indexers: Dict[str, TokenIndexer],
-                                passage_text: str,
-                                answer_info: Dict[str, Any] = None,
-                                additional_metadata: Dict[str, Any] = None) -> Instance:
+    def make_marginal_drop_instance(question_tokens: List[Token],
+                                    passage_tokens: List[Token],
+                                    number_tokens: List[Token],
+                                    number_indices: List[int],
+                                    token_indexers: Dict[str, TokenIndexer],
+                                    passage_text: str,
+                                    answer_info: Dict[str, Any] = None,
+                                    additional_metadata: Dict[str, Any] = None) -> Instance:
         additional_metadata = additional_metadata or {}
         fields: Dict[str, Field] = {}
         passage_offsets = [(token.idx, token.idx + len(token.text)) for token in passage_tokens]
@@ -290,6 +321,42 @@ class DROPReader(DatasetReader):
 
         metadata.update(additional_metadata)
         fields["metadata"] = MetadataField(metadata)
+        return Instance(fields)
+
+    @staticmethod
+    def make_bert_drop_instance(question_tokens: List[Token],
+                                passage_tokens: List[Token],
+                                question_concat_passage_tokens: List[Token],
+                                token_indexers: Dict[str, TokenIndexer],
+                                passage_text: str,
+                                answer_info: Dict[str, Any] = None,
+                                additional_metadata: Dict[str, Any] = None) -> Instance:
+        additional_metadata = additional_metadata or {}
+        fields: Dict[str, Field] = {}
+        passage_offsets = [(token.idx, token.idx + len(token.text)) for token in passage_tokens]
+
+        # This is separate so we can reference it later with a known type.
+        fields['passage'] = TextField(passage_tokens, token_indexers)
+        fields['question'] = TextField(question_tokens, token_indexers)
+        question_and_passage_filed = TextField(question_concat_passage_tokens, token_indexers)
+        fields['question_and_passage'] = question_and_passage_filed
+
+        metadata = {'original_passage': passage_text, 'passage_token_offsets': passage_offsets,
+                    'question_tokens': [token.text for token in question_tokens],
+                    'passage_tokens': [token.text for token in passage_tokens], }
+
+        if answer_info:
+            metadata['answer_texts'] = answer_info["answer_texts"]
+
+            passage_span_fields = \
+                [SpanField(span[0], span[1], fields["question_and_passage"])
+                 for span in answer_info["answer_passage_spans"]]
+            if not passage_span_fields:
+                passage_span_fields.append(SpanField(-1, -1, fields["question_and_passage"]))
+            fields["answer_as_passage_spans"] = ListField(passage_span_fields)
+
+        metadata.update(additional_metadata)
+        fields['metadata'] = MetadataField(metadata)
         return Instance(fields)
 
     @staticmethod

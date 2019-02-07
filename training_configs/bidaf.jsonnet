@@ -18,8 +18,8 @@
         },
         "passage_length_limit": 400,
         "question_length_limit": 50,
-        "skip_invalid_examples": true,
-        "load_squad_style_instances": false
+        "skip_when_all_empty": ["passage_span"],
+        "instance_format": "drop"
     },
     "validation_dataset_reader": {
         "type": "drop",
@@ -40,8 +40,8 @@
         },
         "passage_length_limit": 1000,
         "question_length_limit": 100,
-        "skip_invalid_examples": false,
-        "load_squad_style_instances": false
+        "skip_when_all_empty": [],
+        "instance_format": "drop"
     },
     "train_data_path": std.extVar("DROP_TRAIN_DATA_PATH"),
     "validation_data_path": std.extVar("DROP_DEV_DATA_PATH"),
