@@ -10,8 +10,14 @@
                 "type": "characters",
                 "min_padding_length": 5
             },
+            "bert": {
+                "type": "bert-pretrained",
+                "pretrained_model": "bert-base-uncased",
+                "do_lowercase": true,
+                "use_starting_offsets": false
+            },
         },
-        "passage_length_limit": 400,
+        "passage_length_limit": 330,
         "question_length_limit": 50,
         "skip_when_all_empty": ["passage_span", "question_span", "addition_subtraction", "counting"],
         "instance_format": "drop"
@@ -26,10 +32,16 @@
             "token_characters": {
                 "type": "characters",
                 "min_padding_length": 5
-            }
+            },
+            "bert": {
+                "type": "bert-pretrained",
+                "pretrained_model": "bert-base-uncased",
+                "do_lowercase": true,
+                "use_starting_offsets": false
+            },
         },
-        "passage_length_limit": 1000,
-        "question_length_limit": 100,
+        "passage_length_limit": 400,
+        "question_length_limit": 50,
         "skip_when_all_empty": [],
         "instance_format": "drop"
     },
@@ -47,6 +59,12 @@
     "model": {
         "type": "augmented_qanet",
         "text_field_embedder": {
+            "allow_unmatched_keys": true,
+            "embedder_to_indexer_map": {
+                "tokens": ["tokens"],
+                "token_characters": ["token_characters"],
+                "bert": ["bert", "bert-offsets"],
+            },
             "token_embedders": {
                 "tokens": {
                     "type": "embedding",
@@ -67,6 +85,12 @@
                             5
                         ]
                     },
+                },
+                "bert": {
+                    "type": "bert-pretrained",
+                    "pretrained_model": "bert-base-uncased",
+                    "requires_grad": false,
+                    "top_layer_only": true
                 }
             }
         },

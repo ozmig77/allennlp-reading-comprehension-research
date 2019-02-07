@@ -21,6 +21,13 @@ from word2number.w2n import word_to_num
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
+WORD_NUMBER_MAP = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4,
+                   "five": 5, "six": 6, "seven": 7, "eight": 8,
+                   "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
+                   "thirteen": 13, "fourteen": 14, "fifteen": 15,
+                   "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19}
+
+
 @DatasetReader.register("drop")
 class DROPReader(DatasetReader):
     def __init__(self,
@@ -173,6 +180,7 @@ class DROPReader(DatasetReader):
             question_concat_passage_tokens = question_tokens + [Token("[SEP]")] + passage_tokens
             valid_passage_spans = []
             for span in self.find_valid_spans(passage_tokens, tokenized_answer_texts):
+                # This span is for `question + [SEP] + passage`.
                 valid_passage_spans.append((span[0] + len(question_tokens) + 1, span[1] + len(question_tokens) + 1))
             if not valid_passage_spans:
                 if "passage_span" in self.skip_when_all_empty:
@@ -220,9 +228,10 @@ class DROPReader(DatasetReader):
                     target_numbers.append(number)
             valid_signs_for_add_sub_expressions = []
             valid_counts = []
-            if target_numbers:
+            if answer_type in ["number", "date"]:
                 valid_signs_for_add_sub_expressions = \
                     self.find_valid_add_sub_expressions(numbers_in_passage, target_numbers)
+            if answer_type in ["number"]:
                 numbers_for_count = list(range(10))
                 valid_counts = self.find_valid_counts(numbers_for_count, target_numbers)
 
@@ -393,23 +402,32 @@ class DROPReader(DatasetReader):
         Currently we only support limited types of conversion.
         """
         # strip all punctuations from the sides of the word, except for the negative sign
-        punctruations = string.punctuation.replace('-', '')
-        word = word.strip(punctruations)
-        # some words may contain the comma as deliminator
-        word = word.replace(",", "")
-        # word2num will convert hundred, thousand ... to number, but we skip it.
-        if word in ["hundred", "thousand", "million", "billion", "trillion"]:
-            return None
-        try:
-            number = word_to_num(word)
-        except ValueError:
+        # punctruations = string.punctuation.replace('-', '')
+        # word = word.strip(punctruations)
+        # # some words may contain the comma as deliminator
+        # word = word.replace(",", "")
+        # # word2num will convert hundred, thousand ... to number, but we skip it.
+        # if word in ["hundred", "thousand", "million", "billion", "trillion"]:
+        #     return None
+        # try:
+        #     number = word_to_num(word)
+        # except ValueError:
+        #     try:
+        #         number = int(word)
+        #     except ValueError:
+        #         try:
+        #             number = float(word)
+        #         except ValueError:
+        #             number = None
+        # return number
+        no_comma_word = word.replace(",", "")
+        if no_comma_word in WORD_NUMBER_MAP:
+            number = WORD_NUMBER_MAP[no_comma_word]
+        else:
             try:
-                number = int(word)
+                number = int(no_comma_word)
             except ValueError:
-                try:
-                    number = float(word)
-                except ValueError:
-                    number = None
+                number = None
         return number
 
     @staticmethod
@@ -446,6 +464,7 @@ class DROPReader(DatasetReader):
                                        targets: List[int],
                                        max_number_of_numbers_to_consider: int = 2) -> List[List[int]]:
         valid_signs_for_add_sub_expressions = []
+        # TODO: Try smaller numbers?
         for number_of_numbers_to_consider in range(2, max_number_of_numbers_to_consider + 1):
             possible_signs = list(itertools.product((-1, 1), repeat=number_of_numbers_to_consider))
             for number_combination in itertools.combinations(enumerate(numbers), number_of_numbers_to_consider):

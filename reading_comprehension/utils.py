@@ -26,8 +26,7 @@ def split_tokens_by_hyphen(tokens):
             unsplit_tokens, split_tokens = [token], []
             for hyphen in hyphens:
                 for unsplit_token in unsplit_tokens:
-                    # `-` may represent a negative sign when it is the initial char
-                    if hyphen in token.text and not token.text.startswith("-"):
+                    if hyphen in token.text:
                         split_tokens += split_token_by_hyphen(unsplit_token, hyphen)
                     else:
                         split_tokens.append(unsplit_token)

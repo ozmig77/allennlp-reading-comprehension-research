@@ -10,6 +10,9 @@
                 "type": "characters",
                 "min_padding_length": 5
             },
+            "elmo": {
+                "type": "elmo_characters"
+            },
         },
         "passage_length_limit": 400,
         "question_length_limit": 50,
@@ -26,7 +29,10 @@
             "token_characters": {
                 "type": "characters",
                 "min_padding_length": 5
-            }
+            },
+            "elmo": {
+                "type": "elmo_characters"
+            },
         },
         "passage_length_limit": 1000,
         "question_length_limit": 100,
@@ -63,10 +69,15 @@
                         "type": "cnn",
                         "embedding_dim": 64,
                         "num_filters": 200,
-                        "ngram_filter_sizes": [
-                            5
-                        ]
+                        "ngram_filter_sizes": [5]
                     },
+                },
+                "elmo": {
+                    "type": "elmo_token_embedder",
+                    "options_file": "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway_5.5B/elmo_2x4096_512_2048cnn_2xhighway_5.5B_options.json",
+                    "weight_file": "https://s3-us-west-2.amazonaws.com/allennlp/models/elmo/2x4096_512_2048cnn_2xhighway_5.5B/elmo_2x4096_512_2048cnn_2xhighway_5.5B_weights.hdf5",
+                    "do_layer_norm": false,
+                    "dropout": 0.5
                 }
             }
         },
