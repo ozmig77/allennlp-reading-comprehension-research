@@ -232,6 +232,7 @@ class DROPReader(DatasetReader):
                 valid_signs_for_add_sub_expressions = \
                     self.find_valid_add_sub_expressions(numbers_in_passage, target_numbers)
             if answer_type in ["number"]:
+                # Currently we only support count number 0 ~ 9
                 numbers_for_count = list(range(10))
                 valid_counts = self.find_valid_counts(numbers_for_count, target_numbers)
 

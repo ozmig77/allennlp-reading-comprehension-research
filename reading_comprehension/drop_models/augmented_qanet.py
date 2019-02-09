@@ -264,8 +264,8 @@ class AugmentedQANet(Model):
         if "addition_subtraction" in self.answering_abilities:
             # Shape: (batch_size, # of numbers in the passage)
             number_indices = number_indices.squeeze(-1)
-            number_mask = (number_indices != -1).float()
-            clamped_number_indices = number_indices * number_mask.long()
+            number_mask = (number_indices != -1).long()
+            clamped_number_indices = util.replace_masked_values(number_indices, number_mask, 0)
             # clamped_number_indices = torch.nn.functional.relu(number_indices)
             encoded_passage_for_numbers = torch.cat([modeled_passage_list[0], modeled_passage_list[3]], dim=-1)
             # Shape: (batch_size, # of numbers in the passage, encoding_dim)
@@ -273,7 +273,6 @@ class AugmentedQANet(Model):
                     encoded_passage_for_numbers,
                     1,
                     clamped_number_indices.unsqueeze(-1).expand(-1, -1, encoded_passage_for_numbers.size(-1)))
-            encoded_numbers = encoded_numbers * number_mask.unsqueeze(-1)
             # Shape: (batch_size, # of numbers in the passage)
             encoded_numbers = torch.cat(
                     [encoded_numbers, passage_vector.unsqueeze(1).repeat(1, encoded_numbers.size(1), 1)], -1)
@@ -283,8 +282,9 @@ class AugmentedQANet(Model):
             number_sign_log_probs = torch.nn.functional.log_softmax(number_sign_logits, -1)
 
             # Shape: (batch_size, # of numbers in passage).
+            best_signs_for_numbers = torch.argmax(number_sign_log_probs, -1)
             # For padding numbers, the best sign masked as 0 (not included).
-            best_signs_for_numbers = torch.argmax(number_sign_log_probs, -1) * number_mask.long()
+            best_signs_for_numbers = util.replace_masked_values(best_signs_for_numbers, number_mask, 0)
             # Shape: (batch_size, # of numbers in passage)
             best_signs_log_probs = torch.gather(
                     number_sign_log_probs, 2, best_signs_for_numbers.unsqueeze(-1)).squeeze(-1)
@@ -313,19 +313,21 @@ class AugmentedQANet(Model):
                     # Some spans are padded with index -1,
                     # so we clamp those paddings to 0 and then mask after `torch.gather()`.
                     gold_passage_span_mask = (gold_passage_span_starts != -1).long()
-                    clamped_gold_passage_span_starts = gold_passage_span_starts * gold_passage_span_mask
-                    clamped_gold_passage_ends = gold_passage_span_ends * gold_passage_span_mask
+                    # clamped_gold_passage_span_starts = gold_passage_span_starts * gold_passage_span_mask
+                    # clamped_gold_passage_span_ends = gold_passage_span_ends * gold_passage_span_mask
+                    clamped_gold_passage_span_starts = util.replace_masked_values(gold_passage_span_starts, gold_passage_span_mask, 0)
+                    clamped_gold_passage_span_ends = util.replace_masked_values(gold_passage_span_ends, gold_passage_span_mask, 0)
                     # Shape: (batch_size, # of answer spans)
                     log_likelihood_for_passage_span_starts = \
                         torch.gather(passage_span_start_log_probs, 1, clamped_gold_passage_span_starts)
                     log_likelihood_for_passage_span_ends = \
-                        torch.gather(passage_span_end_log_probs, 1, clamped_gold_passage_ends)
+                        torch.gather(passage_span_end_log_probs, 1, clamped_gold_passage_span_ends)
                     # Shape: (batch_size, # of answer spans)
                     log_likelihood_for_passage_spans = \
                         log_likelihood_for_passage_span_starts + log_likelihood_for_passage_span_ends
                     # For those padded spans, we set their log probabilities to be very small negative value
                     log_likelihood_for_passage_spans = \
-                        util.replace_masked_values(log_likelihood_for_passage_spans, gold_passage_span_mask.float(), -1e32)
+                        util.replace_masked_values(log_likelihood_for_passage_spans, gold_passage_span_mask, -1e7)
                     # Shape: (batch_size, )
                     log_marginal_likelihood_for_passage_span = util.logsumexp(log_likelihood_for_passage_spans)
                     log_marginal_likelihood_list.append(log_marginal_likelihood_for_passage_span)
@@ -337,8 +339,8 @@ class AugmentedQANet(Model):
                     # Some spans are padded with index -1,
                     # so we clamp those paddings to 0 and then mask after `torch.gather()`.
                     gold_question_span_mask = (gold_question_span_starts != -1).long()
-                    clamped_gold_question_span_starts = gold_question_span_starts * gold_question_span_mask
-                    clamped_gold_question_span_ends = gold_question_span_ends * gold_question_span_mask
+                    clamped_gold_question_span_starts = util.replace_masked_values(gold_question_span_starts, gold_question_span_mask, 0)
+                    clamped_gold_question_span_ends = util.replace_masked_values(gold_question_span_ends, gold_question_span_mask, 0)
                     # Shape: (batch_size, # of answer spans)
                     log_likelihood_for_question_span_starts = \
                         torch.gather(question_span_start_log_probs, 1, clamped_gold_question_span_starts)
@@ -349,7 +351,7 @@ class AugmentedQANet(Model):
                         log_likelihood_for_question_span_starts + log_likelihood_for_question_span_ends
                     # For those padded spans, we set their log probabilities to be very small negative value
                     log_likelihood_for_question_spans = \
-                        util.replace_masked_values(log_likelihood_for_question_spans, gold_question_span_mask.float(), -1e32)
+                        util.replace_masked_values(log_likelihood_for_question_spans, gold_question_span_mask, -1e7)
                     # Shape: (batch_size, )
                     # pylint: disable=invalid-name
                     log_marginal_likelihood_for_question_span = util.logsumexp(log_likelihood_for_question_spans)
@@ -371,7 +373,7 @@ class AugmentedQANet(Model):
                     log_likelihood_for_add_subs = log_likelihood_for_number_signs.sum(1)
                     # For those padded combinations, we set their log probabilities to be very small negative value
                     log_likelihood_for_add_subs = \
-                        util.replace_masked_values(log_likelihood_for_add_subs, gold_add_sub_mask, -1e32)
+                        util.replace_masked_values(log_likelihood_for_add_subs, gold_add_sub_mask, -1e7)
                     # Shape: (batch_size, )
                     log_marginal_likelihood_for_add_sub = util.logsumexp(log_likelihood_for_add_subs)
                     log_marginal_likelihood_list.append(log_marginal_likelihood_for_add_sub)
@@ -382,11 +384,11 @@ class AugmentedQANet(Model):
                     # Shape: (batch_size, # of count answers)
                     gold_count_mask = (answer_as_counts != -1).long()
                     # Shape: (batch_size, # of count answers)
-                    clamped_gold_counts = answer_as_counts * gold_count_mask
+                    clamped_gold_counts = util.replace_masked_values(answer_as_counts, gold_count_mask, 0)
                     log_likelihood_for_counts = torch.gather(count_number_log_probs, 1, clamped_gold_counts)
                     # For those padded spans, we set their log probabilities to be very small negative value
                     log_likelihood_for_counts = \
-                        util.replace_masked_values(log_likelihood_for_counts, gold_count_mask.float(), -1e32)
+                        util.replace_masked_values(log_likelihood_for_counts, gold_count_mask, -1e7)
                     # Shape: (batch_size, )
                     log_marginal_likelihood_for_count = util.logsumexp(log_likelihood_for_counts)
                     log_marginal_likelihood_list.append(log_marginal_likelihood_for_count)
@@ -394,12 +396,14 @@ class AugmentedQANet(Model):
                 else:
                     raise ValueError(f"Unsupported answering ability: {answering_ability}")
 
-            all_marginal_log_likelihoods = torch.stack(log_marginal_likelihood_list, dim=-1)
-            # Add the ability probabilities if there are more than one abilities
             if len(self.answering_abilities) > 1:
-                all_marginal_log_likelihoods = all_marginal_log_likelihoods + answer_ability_log_probs
+                # Add the ability probabilities if there are more than one abilities
+                all_log_marginal_likelihoods = torch.stack(log_marginal_likelihood_list, dim=-1)
+                all_log_marginal_likelihoods = all_log_marginal_likelihoods + answer_ability_log_probs
+                marginal_log_likelihood = util.logsumexp(all_log_marginal_likelihoods)
+            else:
+                marginal_log_likelihood = log_marginal_likelihood_list[0]
 
-            marginal_log_likelihood = util.logsumexp(all_marginal_log_likelihoods)
             output_dict["loss"] = - marginal_log_likelihood.mean()
 
         # Compute the metrics and add the tokenized input to the output.
