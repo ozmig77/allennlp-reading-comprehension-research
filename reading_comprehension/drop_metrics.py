@@ -62,6 +62,7 @@ class DropEmAndF1(Metric):
             All the ground truth answer annotations.
         """
         ground_truth_answer_strings = [convert_annotation_to_string(annotation)[0] for annotation in ground_truths]
+        # pylint: disable=unused-variable
         ground_truth_answer_types = [convert_annotation_to_string(annotation)[1] for annotation in ground_truths]
         exact_match, f1_score = metric_max_over_ground_truths(
                 drop_em_and_f1,

@@ -1,13 +1,12 @@
 from typing import Any, Dict, List, Optional
-
-import torch
 import logging
+import torch
 from allennlp.data import Vocabulary
 from allennlp.models.model import Model
 from allennlp.modules import TextFieldEmbedder
 from allennlp.nn import util, InitializerApplicator, RegularizerApplicator
-from reading_comprehension.drop_metrics import DropEmAndF1
 from allennlp.models.reading_comprehension.util import get_best_span
+from reading_comprehension.drop_metrics import DropEmAndF1
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -137,4 +136,3 @@ class BertRcMarginal(Model):
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:
         exact_match, f1_score = self._drop_metrics.get_metric(reset)
         return {'em': exact_match, 'f1': f1_score}
-

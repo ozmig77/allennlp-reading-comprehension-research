@@ -1,7 +1,6 @@
 from typing import Any, Dict, List, Iterable, Optional
-
-import torch
 import logging
+import torch
 from allennlp.data import Vocabulary
 from allennlp.models.model import Model
 from allennlp.models.reading_comprehension.util import get_best_span
@@ -66,7 +65,8 @@ class AugmentedQANet(Model):
             self._answer_ability_predictor = FeedForward(modeling_out_dim + encoding_out_dim,
                                                          activations=[Activation.by_name('relu')(),
                                                                       Activation.by_name('linear')()],
-                                                         hidden_dims=[modeling_out_dim, len(self.answering_abilities)],
+                                                         hidden_dims=[modeling_out_dim,
+                                                                      len(self.answering_abilities)],
                                                          num_layers=2,
                                                          dropout=dropout_prob)
 
@@ -170,8 +170,8 @@ class AugmentedQANet(Model):
                            encoded_passage * passage_passage_vectors],
                           dim=-1))
 
-        # The recurrent modeling layers.
-        # Since these layers share the same parameters, we don't construct them conditioned on answering abilities.
+        # The recurrent modeling layers. Since these layers share the same parameters,
+        # we don't construct them conditioned on answering abilities.
         modeled_passage_list = [self._modeling_proj_layer(merged_passage_attention_vectors)]
         for _ in range(4):
             modeled_passage = self._dropout(self._modeling_layer(modeled_passage_list[-1], passage_mask))
@@ -191,7 +191,8 @@ class AugmentedQANet(Model):
 
         if len(self.answering_abilities) > 1:
             # Shape: (batch_size, number_of_abilities)
-            answer_ability_logits = self._answer_ability_predictor(torch.cat([passage_vector, question_vector], -1))
+            answer_ability_logits = \
+                self._answer_ability_predictor(torch.cat([passage_vector, question_vector], -1))
             answer_ability_log_probs = torch.nn.functional.log_softmax(answer_ability_logits, -1)
             best_answer_ability = torch.argmax(answer_ability_log_probs, 1)
 
@@ -202,7 +203,8 @@ class AugmentedQANet(Model):
             # Info about the best count number prediction
             # Shape: (batch_size,)
             best_count_number = torch.argmax(count_number_log_probs, -1)
-            best_count_log_prob = torch.gather(count_number_log_probs, 1, best_count_number.unsqueeze(-1)).squeeze(-1)
+            best_count_log_prob = \
+                torch.gather(count_number_log_probs, 1, best_count_number.unsqueeze(-1)).squeeze(-1)
             if len(self.answering_abilities) > 1:
                 best_count_log_prob += answer_ability_log_probs[:, self._counting_index]
 
@@ -237,7 +239,8 @@ class AugmentedQANet(Model):
         if "question_span_extraction" in self.answering_abilities:
             # Shape: (batch_size, question_length)
             encoded_question_for_span_prediction = \
-                torch.cat([encoded_question, passage_vector.unsqueeze(1).repeat(1, encoded_question.size(1), 1)], -1)
+                torch.cat([encoded_question,
+                           passage_vector.unsqueeze(1).repeat(1, encoded_question.size(1), 1)], -1)
             question_span_start_logits = \
                 self._question_span_start_predictor(encoded_question_for_span_prediction).squeeze(-1)
             # Shape: (batch_size, question_length)
@@ -247,8 +250,10 @@ class AugmentedQANet(Model):
             question_span_end_log_probs = util.masked_log_softmax(question_span_end_logits, question_mask)
 
             # Info about the best question span prediction
-            question_span_start_logits = util.replace_masked_values(question_span_start_logits, question_mask, -1e7)
-            question_span_end_logits = util.replace_masked_values(question_span_end_logits, question_mask, -1e7)
+            question_span_start_logits = \
+                util.replace_masked_values(question_span_start_logits, question_mask, -1e7)
+            question_span_end_logits = \
+                util.replace_masked_values(question_span_end_logits, question_mask, -1e7)
             # Shape: (batch_size, 2)
             best_question_span = get_best_span(question_span_start_logits, question_span_end_logits)
             # Shape: (batch_size, 2)
@@ -312,8 +317,10 @@ class AugmentedQANet(Model):
                     # Some spans are padded with index -1,
                     # so we clamp those paddings to 0 and then mask after `torch.gather()`.
                     gold_passage_span_mask = (gold_passage_span_starts != -1).long()
-                    clamped_gold_passage_span_starts = util.replace_masked_values(gold_passage_span_starts, gold_passage_span_mask, 0)
-                    clamped_gold_passage_span_ends = util.replace_masked_values(gold_passage_span_ends, gold_passage_span_mask, 0)
+                    clamped_gold_passage_span_starts = \
+                        util.replace_masked_values(gold_passage_span_starts, gold_passage_span_mask, 0)
+                    clamped_gold_passage_span_ends = \
+                        util.replace_masked_values(gold_passage_span_ends, gold_passage_span_mask, 0)
                     # Shape: (batch_size, # of answer spans)
                     log_likelihood_for_passage_span_starts = \
                         torch.gather(passage_span_start_log_probs, 1, clamped_gold_passage_span_starts)
@@ -336,8 +343,10 @@ class AugmentedQANet(Model):
                     # Some spans are padded with index -1,
                     # so we clamp those paddings to 0 and then mask after `torch.gather()`.
                     gold_question_span_mask = (gold_question_span_starts != -1).long()
-                    clamped_gold_question_span_starts = util.replace_masked_values(gold_question_span_starts, gold_question_span_mask, 0)
-                    clamped_gold_question_span_ends = util.replace_masked_values(gold_question_span_ends, gold_question_span_mask, 0)
+                    clamped_gold_question_span_starts = \
+                        util.replace_masked_values(gold_question_span_starts, gold_question_span_mask, 0)
+                    clamped_gold_question_span_ends = \
+                        util.replace_masked_values(gold_question_span_ends, gold_question_span_mask, 0)
                     # Shape: (batch_size, # of answer spans)
                     log_likelihood_for_question_span_starts = \
                         torch.gather(question_span_start_log_probs, 1, clamped_gold_question_span_starts)
@@ -348,14 +357,17 @@ class AugmentedQANet(Model):
                         log_likelihood_for_question_span_starts + log_likelihood_for_question_span_ends
                     # For those padded spans, we set their log probabilities to be very small negative value
                     log_likelihood_for_question_spans = \
-                        util.replace_masked_values(log_likelihood_for_question_spans, gold_question_span_mask, -1e7)
+                        util.replace_masked_values(log_likelihood_for_question_spans,
+                                                   gold_question_span_mask,
+                                                   -1e7)
                     # Shape: (batch_size, )
                     # pylint: disable=invalid-name
-                    log_marginal_likelihood_for_question_span = util.logsumexp(log_likelihood_for_question_spans)
+                    log_marginal_likelihood_for_question_span = \
+                        util.logsumexp(log_likelihood_for_question_spans)
                     log_marginal_likelihood_list.append(log_marginal_likelihood_for_question_span)
 
                 elif answering_ability == "addition_subtraction":
-                    # The padded add-sub combinations use 0 as the signs for all numbers as 0, and we mask them here.
+                    # The padded add-sub combinations use 0 as the signs for all numbers, and we mask them here.
                     # Shape: (batch_size, # of combinations)
                     gold_add_sub_mask = (answer_as_add_sub_expressions.sum(-1) > 0).float()
                     # Shape: (batch_size, # of numbers in the passage, # of combinations)

@@ -1,8 +1,6 @@
 from typing import Any, Dict, List, Optional
-
 import torch
 from torch.nn.functional import nll_loss
-
 from allennlp.data import Vocabulary
 from allennlp.models.model import Model
 from allennlp.modules import Highway

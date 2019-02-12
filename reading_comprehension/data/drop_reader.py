@@ -14,8 +14,8 @@ from allennlp.data.tokenizers import Token, Tokenizer, WordTokenizer
 from allennlp.data.dataset_readers.reading_comprehension.util import IGNORED_TOKENS, STRIPPED_CHARACTERS
 from allennlp.data.fields import Field, TextField, MetadataField, LabelField, ListField, \
     SequenceLabelField, SpanField, IndexField
-from reading_comprehension.utils import split_tokens_by_hyphen
 from word2number.w2n import word_to_num
+from reading_comprehension.utils import split_tokens_by_hyphen
 
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -88,7 +88,6 @@ class DROPReader(DatasetReader):
 
     @overrides
     def _read(self, file_path: str):
-        # pylint: disable=logging-fstring-interpolation
         # if `file_path` is a URL, redirect to the cache
         file_path = cached_path(file_path)
         logger.info("Reading file at %s", file_path)
@@ -130,8 +129,6 @@ class DROPReader(DatasetReader):
                          passage_id: str = None,
                          answer_annotations: List[Dict] = None,
                          passage_tokens: List[Token] = None) -> Union[Instance, None]:
-        logger.info(question_text)
-        logger.info(passage_text)
         # pylint: disable=arguments-differ
         if not passage_tokens:
             passage_tokens = self._tokenizer.tokenize(passage_text)
@@ -185,7 +182,8 @@ class DROPReader(DatasetReader):
             valid_passage_spans = []
             for span in self.find_valid_spans(passage_tokens, tokenized_answer_texts):
                 # This span is for `question + [SEP] + passage`.
-                valid_passage_spans.append((span[0] + len(question_tokens) + 1, span[1] + len(question_tokens) + 1))
+                valid_passage_spans.append((span[0] + len(question_tokens) + 1,
+                                            span[1] + len(question_tokens) + 1))
             if not valid_passage_spans:
                 if "passage_span" in self.skip_when_all_empty:
                     return None
@@ -201,11 +199,11 @@ class DROPReader(DatasetReader):
                                                 passage_text,
                                                 answer_info,
                                                 additional_metadata={
-                                                    "original_passage": passage_text,
-                                                    "original_question": question_text,
-                                                    "passage_id": passage_id,
-                                                    "question_id": question_id,
-                                                    "answer_annotations": answer_annotations})
+                                                        "original_passage": passage_text,
+                                                        "original_question": question_text,
+                                                        "passage_id": passage_id,
+                                                        "question_id": question_id,
+                                                        "answer_annotations": answer_annotations})
         elif self.instance_format == "drop":
             numbers_in_passage = []
             number_indices = []
@@ -246,7 +244,7 @@ class DROPReader(DatasetReader):
                                   "counting": valid_counts}
 
             if self.skip_when_all_empty \
-                    and all(len(type_to_answer_map[skip_type]) == 0 for skip_type in self.skip_when_all_empty):
+                    and not any(type_to_answer_map[skip_type] for skip_type in self.skip_when_all_empty):
                 return None
 
             answer_info = {"answer_texts": answer_texts,  # this `answer_texts` will not be used for evaluation
@@ -263,13 +261,13 @@ class DROPReader(DatasetReader):
                                                     passage_text,
                                                     answer_info,
                                                     additional_metadata={
-                                                        "original_passage": passage_text,
-                                                        "original_question": question_text,
-                                                        "original_numbers": numbers_in_passage,
-                                                        "passage_id": passage_id,
-                                                        "question_id": question_id,
-                                                        "answer_info": answer_info,
-                                                        "answer_annotations": answer_annotations})
+                                                            "original_passage": passage_text,
+                                                            "original_question": question_text,
+                                                            "original_numbers": numbers_in_passage,
+                                                            "passage_id": passage_id,
+                                                            "question_id": question_id,
+                                                            "answer_info": answer_info,
+                                                            "answer_annotations": answer_annotations})
         else:
             raise ValueError(f"Expect the instance format to be \"drop\", \"squad\" or \"bert\", "
                              f"but got {self.instance_format}")
@@ -375,7 +373,7 @@ class DROPReader(DatasetReader):
         return Instance(fields)
 
     @staticmethod
-    def extract_answer_info_from_annotation(answer_annotation: Dict[str, Union[str, Dict, List]]) -> Tuple[str, List]:
+    def extract_answer_info_from_annotation(answer_annotation: Dict[str, Any]) -> Tuple[str, List]:
         answer_type = None
         if answer_annotation["spans"]:
             answer_type = "spans"
@@ -403,38 +401,40 @@ class DROPReader(DatasetReader):
         return answer_type, answer_texts
 
     @staticmethod
-    def convert_word_to_number(word: str):
+    def convert_word_to_number(word: str, try_to_include_more_numbers=False):
         """
         Currently we only support limited types of conversion.
         """
-        # strip all punctuations from the sides of the word, except for the negative sign
-        # punctruations = string.punctuation.replace('-', '')
-        # word = word.strip(punctruations)
-        # # some words may contain the comma as deliminator
-        # word = word.replace(",", "")
-        # # word2num will convert hundred, thousand ... to number, but we skip it.
-        # if word in ["hundred", "thousand", "million", "billion", "trillion"]:
-        #     return None
-        # try:
-        #     number = word_to_num(word)
-        # except ValueError:
-        #     try:
-        #         number = int(word)
-        #     except ValueError:
-        #         try:
-        #             number = float(word)
-        #         except ValueError:
-        #             number = None
-        # return number
-        no_comma_word = word.replace(",", "")
-        if no_comma_word in WORD_NUMBER_MAP:
-            number = WORD_NUMBER_MAP[no_comma_word]
-        else:
+        if try_to_include_more_numbers:
+            # strip all punctuations from the sides of the word, except for the negative sign
+            punctruations = string.punctuation.replace('-', '')
+            word = word.strip(punctruations)
+            # some words may contain the comma as deliminator
+            word = word.replace(",", "")
+            # word2num will convert hundred, thousand ... to number, but we skip it.
+            if word in ["hundred", "thousand", "million", "billion", "trillion"]:
+                return None
             try:
-                number = int(no_comma_word)
+                number = word_to_num(word)
             except ValueError:
-                number = None
-        return number
+                try:
+                    number = int(word)
+                except ValueError:
+                    try:
+                        number = float(word)
+                    except ValueError:
+                        number = None
+            return number
+        else:
+            no_comma_word = word.replace(",", "")
+            if no_comma_word in WORD_NUMBER_MAP:
+                number = WORD_NUMBER_MAP[no_comma_word]
+            else:
+                try:
+                    number = int(no_comma_word)
+                except ValueError:
+                    number = None
+            return number
 
     @staticmethod
     def find_valid_spans(passage_tokens: List[Token],

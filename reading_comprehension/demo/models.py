@@ -1,7 +1,8 @@
+import sys
 from allennlp.predictors import Predictor
 from allennlp.models.archival import load_archive
 from allennlp.common.util import import_submodules
-import sys
+
 
 # The path to the augmented qanet project dir
 sys.path.append('../../')
@@ -31,13 +32,5 @@ class DemoModel:
         return Predictor.from_archive(archive, self.predictor_name)
 
 
-# pylint: disable=line-too-long
-MODELS = {
-    'machine-comprehension': DemoModel(
-        # the path to the model archive file
-        '../../model.tar.gz',
-        # 'https://s3-us-west-2.amazonaws.com/allennlp/models/bidaf-model-2017.09.15-charpad.tar.gz',
-        'machine-comprehension'
-    ),
-}
-# pylint: enable=line-too-long
+MODELS = {'machine-comprehension': DemoModel('../../model.tar.gz',  # the path to the model archive file
+                                             'machine-comprehension')}
