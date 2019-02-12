@@ -6,7 +6,7 @@
                 "type": "bert-pretrained",
                 "pretrained_model": "bert-base-uncased",
                 "do_lowercase": true,
-                "use_starting_offsets": true
+                "use_starting_offsets": false
             },
         },
         "passage_length_limit": 300,
@@ -21,7 +21,7 @@
                 "type": "bert-pretrained",
                 "pretrained_model": "bert-base-uncased",
                 "do_lowercase": true,
-                "use_starting_offsets": true
+                "use_starting_offsets": false
             },
         },
         "passage_length_limit": 400,

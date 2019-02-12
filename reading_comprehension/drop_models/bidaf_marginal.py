@@ -10,7 +10,7 @@ from allennlp.modules import Highway
 from allennlp.modules import Seq2SeqEncoder, SimilarityFunction, TimeDistributed, TextFieldEmbedder
 from allennlp.modules.matrix_attention.legacy_matrix_attention import LegacyMatrixAttention
 from allennlp.nn import util, InitializerApplicator, RegularizerApplicator
-from reading_comprehension.drop_em_and_f1 import DropEmAndF1
+from reading_comprehension.drop_metrics import DropEmAndF1
 
 
 @Model.register("bidaf_marginal")
@@ -170,19 +170,23 @@ class BiDAFMarginal(Model):
             # Some spans are padded with index -1,
             # so we clamp those paddings to 0 and then mask after `torch.gather()`.
             gold_passage_span_mask = (gold_passage_span_starts != -1).long()
-            clamped_gold_passage_span_starts = gold_passage_span_starts * gold_passage_span_mask
-            clamped_gold_passage_ends = gold_passage_span_ends * gold_passage_span_mask
+            clamped_gold_passage_span_starts = util.replace_masked_values(gold_passage_span_starts,
+                                                                          gold_passage_span_mask,
+                                                                          0)
+            clamped_gold_passage_span_ends = util.replace_masked_values(gold_passage_span_ends,
+                                                                        gold_passage_span_mask,
+                                                                        0)
             # Shape: (batch_size, # of answer spans)
             log_likelihood_for_passage_span_starts = \
                 torch.gather(passage_span_start_log_probs, 1, clamped_gold_passage_span_starts)
             log_likelihood_for_passage_span_ends = \
-                torch.gather(passage_span_end_log_probs, 1, clamped_gold_passage_ends)
+                torch.gather(passage_span_end_log_probs, 1, clamped_gold_passage_span_ends)
             # Shape: (batch_size, # of answer spans)
             log_likelihood_for_passage_spans = \
                 log_likelihood_for_passage_span_starts + log_likelihood_for_passage_span_ends
             # For those padded spans, we set their log probabilities to be very small negative value
             log_likelihood_for_passage_spans = \
-                util.replace_masked_values(log_likelihood_for_passage_spans, gold_passage_span_mask.float(), -1e32)
+                util.replace_masked_values(log_likelihood_for_passage_spans, gold_passage_span_mask, -1e32)
             # Shape: (batch_size, )
             log_marginal_likelihood_for_passage_span = util.logsumexp(log_likelihood_for_passage_spans)
             output_dict["loss"] = - log_marginal_likelihood_for_passage_span.mean()
@@ -205,9 +209,9 @@ class BiDAFMarginal(Model):
                 best_answer_str = passage_str[start_offset:end_offset]
                 output_dict["question_id"].append(metadata[i]["question_id"])
                 output_dict["answer"].append(best_answer_str)
-                answer_texts = metadata[i].get('answer_texts', [])
-                if answer_texts:
-                    self._drop_metrics(best_answer_str, answer_texts)
+                answer_annotations = metadata[i].get('answer_annotations', [])
+                if answer_annotations:
+                    self._drop_metrics(best_answer_str, answer_annotations)
         return output_dict
 
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:

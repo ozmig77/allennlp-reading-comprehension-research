@@ -10,7 +10,7 @@ from allennlp.modules import Seq2SeqEncoder, TextFieldEmbedder
 from allennlp.nn import util, InitializerApplicator, RegularizerApplicator
 from allennlp.training.metrics import BooleanAccuracy, CategoricalAccuracy
 from allennlp.models.reading_comprehension.util import get_best_span
-from reading_comprehension.drop_em_and_f1 import DropEmAndF1
+from reading_comprehension.drop_metrics import DropEmAndF1
 
 
 # TODO: Change this to marginal loss
@@ -110,9 +110,9 @@ class PassageOnlyRcModel(Model):
                 best_span_string = passage_str[start_offset:end_offset]
                 output_dict["question_id"].append(metadata[i]["question_id"])
                 output_dict["answer"].append(best_span_string)
-                answer_texts = metadata[i].get('answer_texts', [])
-                if answer_texts:
-                    self._drop_metrics(best_span_string, answer_texts)
+                answer_annotations = metadata[i].get('answer_annotations', [])
+                if answer_annotations:
+                    self._drop_metrics(best_span_string, answer_annotations)
         return output_dict
 
     def get_metrics(self, reset: bool = False) -> Dict[str, float]:

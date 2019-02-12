@@ -145,7 +145,7 @@
         "cuda_device": 0,
         "optimizer": {
             "type": "adam",
-            "lr": 0.001,
+            "lr": 5e-4,
             "betas": [
                 0.8,
                 0.999

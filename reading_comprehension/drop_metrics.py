@@ -1,9 +1,11 @@
 import string
 import re
-from typing import Tuple
+from typing import Tuple, List, Union
 from overrides import overrides
-from allennlp.tools import squad_eval
+from allennlp.tools.squad_eval import metric_max_over_ground_truths
 from allennlp.training.metrics.metric import Metric
+from reading_comprehension.data.drop_official_evaluate import get_metrics as drop_em_and_f1
+from reading_comprehension.data.drop_official_evaluate import to_string as convert_annotation_to_string
 
 
 STOPWORDS = set(["a", "an", "the"])
@@ -49,21 +51,23 @@ class DropEmAndF1(Metric):
         self._count = 0
 
     @overrides
-    def __call__(self, best_span_string, answer_strings):
+    def __call__(self, prediction: Union[str, List], ground_truths: List):
         """
         Parameters
         ----------
-        value : ``float``
-            The value to average.
+        prediction: ``Union[str, List]``
+            The predicted answer from the model evaluated. This could be a string, or a list of string
+            when multiple spans are predicted as answer.
+        ground_truths: ``List``
+            All the ground truth answer annotations.
         """
-        exact_match = squad_eval.metric_max_over_ground_truths(
-                bag_of_words_exact_match,
-                best_span_string,
-                answer_strings)
-        f1_score = squad_eval.metric_max_over_ground_truths(
-                bag_of_words_f1,
-                best_span_string,
-                answer_strings)
+        ground_truth_answer_strings = [convert_annotation_to_string(annotation)[0] for annotation in ground_truths]
+        ground_truth_answer_types = [convert_annotation_to_string(annotation)[1] for annotation in ground_truths]
+        exact_match, f1_score = metric_max_over_ground_truths(
+                drop_em_and_f1,
+                prediction,
+                ground_truth_answer_strings
+        )
         self._total_em += exact_match
         self._total_f1 += f1_score
         self._count += 1

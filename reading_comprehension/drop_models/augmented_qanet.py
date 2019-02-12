@@ -12,7 +12,7 @@ from allennlp.modules import Seq2SeqEncoder, TextFieldEmbedder
 from allennlp.modules.matrix_attention.matrix_attention import MatrixAttention
 from allennlp.nn import util, InitializerApplicator, RegularizerApplicator
 from allennlp.nn.util import masked_softmax
-from reading_comprehension.drop_em_and_f1 import DropEmAndF1
+from reading_comprehension.drop_metrics import DropEmAndF1
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -266,7 +266,6 @@ class AugmentedQANet(Model):
             number_indices = number_indices.squeeze(-1)
             number_mask = (number_indices != -1).long()
             clamped_number_indices = util.replace_masked_values(number_indices, number_mask, 0)
-            # clamped_number_indices = torch.nn.functional.relu(number_indices)
             encoded_passage_for_numbers = torch.cat([modeled_passage_list[0], modeled_passage_list[3]], dim=-1)
             # Shape: (batch_size, # of numbers in the passage, encoding_dim)
             encoded_numbers = torch.gather(
@@ -313,8 +312,6 @@ class AugmentedQANet(Model):
                     # Some spans are padded with index -1,
                     # so we clamp those paddings to 0 and then mask after `torch.gather()`.
                     gold_passage_span_mask = (gold_passage_span_starts != -1).long()
-                    # clamped_gold_passage_span_starts = gold_passage_span_starts * gold_passage_span_mask
-                    # clamped_gold_passage_span_ends = gold_passage_span_ends * gold_passage_span_mask
                     clamped_gold_passage_span_starts = util.replace_masked_values(gold_passage_span_starts, gold_passage_span_mask, 0)
                     clamped_gold_passage_span_ends = util.replace_masked_values(gold_passage_span_ends, gold_passage_span_mask, 0)
                     # Shape: (batch_size, # of answer spans)
@@ -450,13 +447,14 @@ class AugmentedQANet(Model):
 
                 output_dict["question_id"].append(metadata[i]["question_id"])
                 output_dict["answer"].append(predicted_answer)
-                answer_texts = metadata[i].get('answer_texts', [])
-                if answer_texts:
-                    self._drop_metrics(predicted_answer, answer_texts)
+                answer_annotations = metadata[i].get('answer_annotations', [])
+                if answer_annotations:
+                    self._drop_metrics(predicted_answer, answer_annotations)
             # This is used for the demo.
             output_dict["passage_question_attention"] = passage_question_attention
             output_dict["question_tokens"] = question_tokens
             output_dict["passage_tokens"] = passage_tokens
+            # The demo takes `best_span_str` as a key to find the predicted answer
             output_dict["best_span_str"] = output_dict["answer"]
         return output_dict
 

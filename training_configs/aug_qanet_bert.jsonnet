@@ -121,7 +121,7 @@
             "hidden_dim": 128,
             "attention_projection_dim": 128,
             "feedforward_hidden_dim": 128,
-            "num_blocks": 6,
+            "num_blocks": 2,
             "num_convs_per_block": 2,
             "conv_kernel_size": 5,
             "num_attention_heads": 8,
@@ -169,7 +169,7 @@
         "cuda_device": 0,
         "optimizer": {
             "type": "adam",
-            "lr": 0.001,
+            "lr": 5e-4,
             "betas": [
                 0.8,
                 0.999

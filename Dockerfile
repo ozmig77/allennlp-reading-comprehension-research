@@ -17,6 +17,10 @@ LABEL com.nvidia.volumes.needed="nvidia_driver"
 WORKDIR /rc-experiments/
 
 # Use this line here because currently the downloading the 1.0.0 version in docker always crash.
+# The reason might be that PyTorch 1.0 uses different installation file for different CPU/GPU settings.
+# When building image locally on mac, there is no GPU support.
+# And Deehru found that the performance becomes very unstable on torch 1.0. This needs more tests to confirm.
+# So we just use the old version of Pytorch here.
 RUN pip install torch==0.4.1
 
 COPY requirements.txt .

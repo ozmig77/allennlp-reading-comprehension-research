@@ -103,12 +103,17 @@ class DROPReader(DatasetReader):
             for question_answer in passage_info["qa_pairs"]:
                 question_id = question_answer["query_id"]
                 question_text = question_answer["question"].strip()
-                answer_annotation = question_answer["answer"] if "answer" in question_answer else None
+                answer_annotations = []
+                if "answer" in question_answer:
+                    answer_annotations.append(question_answer["answer"])
+                if "validated_answers" in question_answer:
+                    answer_annotations += question_answer["validated_answers"]
+
                 instance = self.text_to_instance(question_text,
                                                  passage_text,
                                                  question_id,
                                                  passage_id,
-                                                 answer_annotation,
+                                                 answer_annotations,
                                                  passage_tokens)
                 if instance is not None:
                     instances.append(instance)
@@ -123,8 +128,10 @@ class DROPReader(DatasetReader):
                          passage_text: str,
                          question_id: str = None,
                          passage_id: str = None,
-                         answer_annotation: Dict[str, Union[str, Dict, List]] = None,
+                         answer_annotations: List[Dict] = None,
                          passage_tokens: List[Token] = None) -> Union[Instance, None]:
+        logger.info(question_text)
+        logger.info(passage_text)
         # pylint: disable=arguments-differ
         if not passage_tokens:
             passage_tokens = self._tokenizer.tokenize(passage_text)
@@ -139,15 +146,10 @@ class DROPReader(DatasetReader):
             question_tokens = question_tokens[: self.question_length_limit]
 
         answer_type, answer_texts = None, []
-        if answer_annotation is not None:
-            answer_type, answer_texts = self.extract_answer_info_from_annotation(answer_annotation)
-
-        # The original answer_texts is a list, because we treat the all spans and all date tokens as correct.
-        # This is useful when finding the matched spans for training.
-        # However, for evaluation, all tokens should be regard as one single answer.
-        answer_texts_for_evaluation = [' '.join(answer_texts)]
-        if not self.relaxed_span_match_for_finding_labels:
-            answer_texts = answer_texts_for_evaluation
+        if answer_annotations:
+            # Currently we only use the first annotated answer here, but actually this doesn't affect
+            # the training, because we only have one annotation for the train set.
+            answer_type, answer_texts = self.extract_answer_info_from_annotation(answer_annotations[0])
 
         # Tokenize the answer text in order to find the matched span based on token
         tokenized_answer_texts = []
@@ -169,13 +171,15 @@ class DROPReader(DatasetReader):
                                                        self._token_indexers,
                                                        passage_text,
                                                        valid_passage_spans,
-                                                       answer_texts_for_evaluation,
+                                                       # this `answer_texts` will not be used for evaluation
+                                                       answer_texts,
                                                        additional_metadata={
                                                                "original_passage": passage_text,
                                                                "original_question": question_text,
                                                                "passage_id": passage_id,
                                                                "question_id": question_id,
-                                                               "valid_passage_spans": valid_passage_spans})
+                                                               "valid_passage_spans": valid_passage_spans,
+                                                               "answer_annotations": answer_annotations})
         elif self.instance_format == "bert":
             question_concat_passage_tokens = question_tokens + [Token("[SEP]")] + passage_tokens
             valid_passage_spans = []
@@ -188,7 +192,7 @@ class DROPReader(DatasetReader):
                 else:
                     valid_passage_spans.append((len(question_concat_passage_tokens) - 1,
                                                 len(question_concat_passage_tokens) - 1))
-            answer_info = {"answer_texts": answer_texts_for_evaluation,
+            answer_info = {"answer_texts": answer_texts,  # this `answer_texts` will not be used for evaluation
                            "answer_passage_spans": valid_passage_spans}
             return self.make_bert_drop_instance(question_tokens,
                                                 passage_tokens,
@@ -200,8 +204,8 @@ class DROPReader(DatasetReader):
                                                     "original_passage": passage_text,
                                                     "original_question": question_text,
                                                     "passage_id": passage_id,
-                                                    "question_id": question_id}
-                                                )
+                                                    "question_id": question_id,
+                                                    "answer_annotations": answer_annotations})
         elif self.instance_format == "drop":
             numbers_in_passage = []
             number_indices = []
@@ -245,7 +249,7 @@ class DROPReader(DatasetReader):
                     and all(len(type_to_answer_map[skip_type]) == 0 for skip_type in self.skip_when_all_empty):
                 return None
 
-            answer_info = {"answer_texts": answer_texts_for_evaluation,
+            answer_info = {"answer_texts": answer_texts,  # this `answer_texts` will not be used for evaluation
                            "answer_passage_spans": valid_passage_spans,
                            "answer_question_spans": valid_question_spans,
                            "signs_for_add_sub_expressions": valid_signs_for_add_sub_expressions,
@@ -264,7 +268,8 @@ class DROPReader(DatasetReader):
                                                         "original_numbers": numbers_in_passage,
                                                         "passage_id": passage_id,
                                                         "question_id": question_id,
-                                                        "answer_info": answer_info})
+                                                        "answer_info": answer_info,
+                                                        "answer_annotations": answer_annotations})
         else:
             raise ValueError(f"Expect the instance format to be \"drop\", \"squad\" or \"bert\", "
                              f"but got {self.instance_format}")
