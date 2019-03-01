@@ -79,10 +79,12 @@ class DROPReader(DatasetReader):
         self._token_indexers = token_indexers or {"tokens": SingleIdTokenIndexer()}
         self.passage_length_limit = passage_length_limit
         self.question_length_limit = question_length_limit
-        for item in skip_when_all_empty:
+
+        self.skip_when_all_empty = skip_when_all_empty if skip_when_all_empty is not None else []
+        for item in self.skip_when_all_empty:
             assert item in ["passage_span", "question_span", "addition_subtraction", "counting"], \
                 f"Unsupported skip type: {item}"
-        self.skip_when_all_empty = skip_when_all_empty if skip_when_all_empty is not None else []
+
         self.instance_format = instance_format
         self.relaxed_span_match_for_finding_labels = relaxed_span_match_for_finding_labels
 
@@ -145,9 +147,18 @@ class DROPReader(DatasetReader):
 
         answer_type, answer_texts = None, []
         if answer_annotations:
-            # Currently we only use the first annotated answer here, but actually this doesn't affect
-            # the training, because we only have one annotation for the train set.
-            answer_type, answer_texts = self.extract_answer_info_from_annotation(answer_annotations[0])
+            # Currently, we only have multiple annotations for the dev and test set.
+            for answer_annotation in answer_annotations:
+                type_info, text_info = self.extract_answer_info_from_annotation(answer_annotation)
+                if type_info is not None:
+                    # use the last valid type as the gold type
+                    answer_type = type_info
+                    if self.relaxed_span_match_for_finding_labels:
+                        # If one annotation has multiple spans, treat all spans as correct.
+                        # Using this will make it easier to find matching spans in the passage.
+                        answer_texts += text_info
+                    else:
+                        answer_texts.append(' '.join(text_info))
 
         # Tokenize the answer text in order to find the matched span based on token
         tokenized_answer_texts = []

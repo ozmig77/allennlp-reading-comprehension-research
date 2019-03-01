@@ -1,7 +1,6 @@
 # pylint: skip-file
 
 import json
-import sys
 import argparse
 import string
 import numpy as np
@@ -19,13 +18,6 @@ def normalize_answer(s):
     def white_space_fix(text):
         return ' '.join(text.split())
 
-    def is_number(s):
-        try:
-            float(s)
-            return True
-        except ValueError:
-            return False
-
     def remove_punc(text):
         if not is_number(text):
             exclude = set(string.punctuation)
@@ -36,15 +28,28 @@ def normalize_answer(s):
     def lower(text):
         return text.lower()
 
-    # use the number instead of string, if it is one
-    def norm_number(text):
-        if is_number(text):
-            return str(float(text))
-        else:
-            return text
+    def tokenize(text):
+        return re.split(" |-", text)
 
-    sp = ' '.join([white_space_fix(remove_articles(norm_number(remove_punc(lower(tok))))) for tok in s.split()])
+    sp = [white_space_fix(remove_articles(str(normalize_number(remove_punc(lower(tok)))))) for tok in tokenize(s)]
+    sp = [s for s in sp if s.strip()]
+    sp = ' '.join(sp).strip()
     return sp
+
+
+def is_number(s):
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+
+
+def normalize_number(text):
+    if is_number(text):
+        return float(text)
+    else:
+        return text
 
 
 def answer_to_bags(answer):
@@ -55,32 +60,76 @@ def answer_to_bags(answer):
     if isinstance(answer, str):
         raw_spans = [answer]
     span_bag = set()
-    token_bag = set()
+    token_bag = []
     for raw_span in raw_spans:
         span = normalize_answer(raw_span)
         span_bag.add(span)
-        token_bag.update(span.split())
+        token_bag.append(set(span.split()))
     return span_bag, token_bag
+
+
+def align_bags(predicted, gold):
+    f1_scores = []
+    for gold_it in range(len(gold)):
+        gold_item = gold[gold_it]
+        max_f1 = 0.0
+        max_it = None
+        best_alignment = (set([]), set([]))
+        for pred_it in range(len(predicted)):
+            pred_item = predicted[pred_it]
+            current_f1 = compute_f1(pred_item, gold_item)
+            if current_f1 >= max_f1:
+                best_alignment = (gold_item, pred_item)
+                max_f1 = current_f1
+                max_it = pred_it
+        match_flag = match_numbers_if_present(*best_alignment)
+        if match_flag:
+            f1_scores.append(max_f1)
+        else:
+            f1_scores.append(0.0)
+        gold[gold_it] = {}
+        predicted[max_it] = {}
+    return f1_scores
+
+
+def compute_f1(predicted_bag, gold_bag):
+    intersection = len(gold_bag.intersection(predicted_bag))
+    if len(predicted_bag) == 0:
+        precision = 1.0
+    else:
+        precision = intersection / float(len(predicted_bag))
+    if len(gold_bag) == 0:
+        recall = 1.0
+    else:
+        recall = intersection / float(len(gold_bag))
+    f1 = (2 * precision * recall) / (precision + recall) if not (precision == 0.0 and recall == 0.0) else 0.0
+    return f1
 
 
 def get_metrics(predicted, gold):
     predicted_bags = answer_to_bags(predicted)
     gold_bags = answer_to_bags(gold)
 
-    exact_match = 1 if predicted_bags[0] == gold_bags[0] else 0
+    exact_match = 1.0 if predicted_bags[0] == gold_bags[0] else 0
 
-    intersection = len(gold_bags[1].intersection(predicted_bags[1]))
-    if len(predicted_bags[1]) == 0:
-        precision = 1.0
-    else:
-        precision = intersection / len(predicted_bags[1])
-    if len(gold_bags[1]) == 0:
-        recall = 1.0
-    else:
-        recall = intersection / len(gold_bags[1])
-    f1 = (2 * precision * recall) / (precision + recall) if not (precision == 0 and recall == 0) else 0
-
+    f1_per_bag = align_bags(predicted_bags[1], gold_bags[1])
+    f1 = np.mean(f1_per_bag)
+    f1 = round(f1, 2)
     return exact_match, f1
+
+
+def match_numbers_if_present(gold_bag, predicted_bag):
+    gold_numbers = set()
+    predicted_numbers = set()
+    for word in gold_bag:
+        if is_number(word):
+            gold_numbers.add(word)
+    for word in predicted_bag:
+        if is_number(word):
+            predicted_numbers.add(word)
+    if len(gold_numbers) == 0 or (len(gold_numbers) > 0 and len(gold_numbers.intersection(predicted_numbers)) > 0):
+        return True
+    return False
 
 
 def to_string(answer):
@@ -153,10 +202,10 @@ def run_evaluation(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Evaluate on DROP dataset')
+    parser = argparse.ArgumentParser(description='evaluate on drop dataset')
     parser.add_argument("--gold_path", type=str, required=False, default="drop_dataset_test.gold.json",
                         help='location of the gold file')
-    parser.add_argument("--prediction_path", type=str, required=True,
+    parser.add_argument("--prediction_path", type=str, required=False, default="sample_predictions.json",
                         help='location of the prediction file')
     args = parser.parse_args()
     run_evaluation(args)

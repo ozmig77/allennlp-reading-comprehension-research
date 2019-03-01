@@ -21,7 +21,7 @@ from allennlp.common.params import Params
 
 def main(param_file: str, args: argparse.Namespace):
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], universal_newlines=True).strip()
-    image = f"allennlp/sparc_rc:{commit}"
+    image = f"allennlp/drop_rc:{commit}"
     overrides = ""
 
     # Reads params and sets environment.

@@ -156,9 +156,7 @@ class BiDAFMarginal(Model):
         best_passage_span = \
             BidirectionalAttentionFlow.get_best_span(passage_span_start_logits, passage_span_end_logits)
 
-        output_dict = {"passage_question_attention": passage_question_attention,
-                       "passage_span_start_probs": passage_span_start_log_probs.exp(),
-                       "passage_span_end_probs": passage_span_end_log_probs.exp()}
+        output_dict = {}
 
         # If answer is given, compute the loss for training.
         if answer_as_passage_spans is not None:

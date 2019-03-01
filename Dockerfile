@@ -25,7 +25,7 @@ RUN pip install torch==0.4.1
 
 COPY requirements.txt .
 RUN pip install -r requirements.txt
-RUN spacy download en_core_web_sm
+RUN python -m spacy download en
 COPY reading_comprehension reading_comprehension
 
 COPY env_vars env_vars
